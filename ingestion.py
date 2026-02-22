@@ -2,6 +2,7 @@ import os
 
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -9,41 +10,57 @@ from pinecone import Pinecone, ServerlessSpec
 
 load_dotenv()
 
-# Directory containing PDF files to ingest
 PDF_DIR = "./docs"
-
-# Pinecone configuration
 PINECONE_INDEX_NAME = os.environ["PINECONE_INDEX_NAME"]
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_DIMENSIONS = 1536
 
-# Load all PDFs from the directory
-loader = PyPDFDirectoryLoader(PDF_DIR)
-docs = loader.load()
 
-text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    chunk_size=250, chunk_overlap=0
-)
-doc_splits = text_splitter.split_documents(docs)
+def _get_embeddings() -> OpenAIEmbeddings:
+    return OpenAIEmbeddings(model=EMBEDDING_MODEL, dimensions=EMBEDDING_DIMENSIONS)
 
-# Initialise Pinecone client and ensure the index exists
-pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
 
-if PINECONE_INDEX_NAME not in [idx.name for idx in pc.list_indexes()]:
-    pc.create_index(
-        name=PINECONE_INDEX_NAME,
-        dimension=1536,  # text-embedding-3-small
-        metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+def _ensure_index_exists() -> None:
+    """Create the Pinecone index if it does not already exist."""
+    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+    if PINECONE_INDEX_NAME not in [idx.name for idx in pc.list_indexes()]:
+        pc.create_index(
+            name=PINECONE_INDEX_NAME,
+            dimension=EMBEDDING_DIMENSIONS,
+            metric="cosine",
+            spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+        )
+
+
+def ingest_documents(pdf_dir: str = PDF_DIR) -> None:
+    """Load PDFs, split into chunks, and upsert into Pinecone.
+
+    Run this once (or whenever the document set changes).
+    """
+    _ensure_index_exists()
+
+    docs = PyPDFDirectoryLoader(pdf_dir).load()
+    doc_splits = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=250, chunk_overlap=0
+    ).split_documents(docs)
+
+    PineconeVectorStore.from_documents(
+        documents=doc_splits,
+        embedding=_get_embeddings(),
+        index_name=PINECONE_INDEX_NAME,
     )
+    print(f"Ingested {len(doc_splits)} chunks into '{PINECONE_INDEX_NAME}'.")
 
-embeddings = OpenAIEmbeddings(
-    model="text-embedding-3-small",
-    dimensions=1536
-)
 
-vectorstore = PineconeVectorStore.from_documents(
-    documents=doc_splits,
-    embedding=embeddings,
-    index_name=PINECONE_INDEX_NAME,
-)
+def get_retriever() -> VectorStoreRetriever:
+    """Return a retriever backed by the existing Pinecone index.
+    """
+    vectorstore = PineconeVectorStore(
+        index_name=PINECONE_INDEX_NAME,
+        embedding=_get_embeddings(),
+    )
+    return vectorstore.as_retriever()
 
-retriever = vectorstore.as_retriever()
+
+if __name__ == "__main__":
+    ingest_documents()
