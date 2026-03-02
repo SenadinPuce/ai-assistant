@@ -8,11 +8,13 @@ from langchain_core.documents import Document
 load_dotenv()
 
 from graph.chains.retrieval_grader_chain import GradeDocument, retrieval_grader_chain
+from graph.nodes.generation_node import _format_context, generate_answer
 from graph.nodes.grade_documents_node import grade_documents
 from graph.state import GraphState
 
-
+# ---------------------------------------------------------------------------
 # Helper functions for tests
+# ---------------------------------------------------------------------------
 
 
 def _make_state(question: str, documents: list) -> GraphState:
@@ -23,8 +25,9 @@ def _grade(score: str) -> GradeDocument:
     return GradeDocument(binary_score=score)
 
 
-
+# ---------------------------------------------------------------------------
 # Unit tests for grade_documents node
+# ---------------------------------------------------------------------------
 
 
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
@@ -89,8 +92,9 @@ def test_grade_documents_preserves_question(mock_grader: MagicMock) -> None:
 
     assert result["question"] == "Sta su poslovni sistemi?"
 
-
+# ---------------------------------------------------------------------------
 # Integration tests for retrieval_grader chain
+# ---------------------------------------------------------------------------
 
 _skip_integration = pytest.mark.skipif(
     not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
@@ -122,3 +126,87 @@ def test_retrieval_grader_irrelevant_document() -> None:
         }
     )
     assert result.binary_score == "no"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — generation node
+# ---------------------------------------------------------------------------
+
+
+def test_format_context_joins_documents() -> None:
+    """_format_context joins multiple Document page_contents with double newline."""
+    docs = [
+        Document(page_content="First chunk."),
+        Document(page_content="Second chunk."),
+    ]
+    result = _format_context(docs)
+    assert result == "First chunk.\n\nSecond chunk."
+
+
+def test_format_context_empty_list() -> None:
+    """_format_context returns empty string for no documents."""
+    assert _format_context([]) == ""
+
+
+@patch("graph.nodes.generation_node.generation_chain")
+def test_generate_answer_calls_chain_with_formatted_context(mock_chain: MagicMock) -> None:
+    """generate_answer formats documents and passes them as a string to the chain."""
+    mock_chain.invoke.return_value = "Poslovni sistemi su..."
+    docs = [
+        Document(page_content="Dio A."),
+        Document(page_content="Dio B."),
+    ]
+    state: GraphState = {
+        "question": "Sta su poslovni sistemi?",
+        "documents": docs,
+        "generation": "",
+        "web_search": False,
+    }
+
+    result = generate_answer(state)
+
+    mock_chain.invoke.assert_called_once_with(
+        {"question": "Sta su poslovni sistemi?", "context": "Dio A.\n\nDio B."}
+    )
+    assert result["generation"] == "Poslovni sistemi su..."
+
+
+@patch("graph.nodes.generation_node.generation_chain")
+def test_generate_answer_returns_generation_in_state(mock_chain: MagicMock) -> None:
+    """generate_answer stores the chain output under 'generation' key."""
+    mock_chain.invoke.return_value = "Odgovor."
+    state: GraphState = {
+        "question": "Pitanje?",
+        "documents": [Document(page_content="Kontekst.")],
+        "generation": "",
+        "web_search": False,
+    }
+
+    result = generate_answer(state)
+
+    assert result["generation"] == "Odgovor."
+
+
+# ---------------------------------------------------------------------------
+# Integration test — generation chain
+# ---------------------------------------------------------------------------
+
+
+@_skip_integration
+def test_generation_chain_produces_answer() -> None:
+    """Integration: generation chain returns a non-empty string answer."""
+    from graph.chains.generation_chain import generation_chain
+
+    result: str = generation_chain.invoke(
+        {
+            "question": "Sta su poslovni sistemi?",
+            "context": (
+                "Poslovni sistem predstavlja skup proizvodnih, ekonomskih i "
+                "društvenih podsistema koji povezuju okolinu sa proizvodnim sistemima."
+            ),
+        }
+    )
+
+    assert isinstance(result, str)
+    assert len(result) > 0
+
