@@ -10,10 +10,13 @@ from pinecone import Pinecone, ServerlessSpec
 
 load_dotenv()
 
-PDF_DIR = "./docs"
-PINECONE_INDEX_NAME = os.environ["PINECONE_INDEX_NAME"]
-EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMENSIONS = 1536
+from graph.consts import (
+    EMBEDDING_DIMENSIONS,
+    EMBEDDING_MODEL,
+    PDF_DIR,
+    PINECONE_INDEX_NAME,
+    SIMILARITY_THRESHOLD,
+)
 
 
 def _get_embeddings() -> OpenAIEmbeddings:
@@ -52,14 +55,23 @@ def ingest_documents(pdf_dir: str = PDF_DIR) -> None:
     print(f"Ingested {len(doc_splits)} chunks into '{PINECONE_INDEX_NAME}'.")
 
 
-def get_retriever() -> VectorStoreRetriever:
+def get_retriever(k: int = 4, score_threshold: float = SIMILARITY_THRESHOLD) -> VectorStoreRetriever:
     """Return a retriever backed by the existing Pinecone index.
+
+    Args:
+        k: Maximum number of documents to retrieve.
+        score_threshold: Minimum cosine similarity score. Documents below
+            this threshold are discarded before they reach the grading node,
+            reducing unnecessary LLM calls.
     """
     vectorstore = PineconeVectorStore(
         index_name=PINECONE_INDEX_NAME,
         embedding=_get_embeddings(),
     )
-    return vectorstore.as_retriever()
+    return vectorstore.as_retriever(
+        search_type="similarity_score_threshold",
+        search_kwargs={"k": k, "score_threshold": score_threshold},
+    )
 
 
 if __name__ == "__main__":

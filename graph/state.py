@@ -8,13 +8,15 @@ class GraphState(TypedDict):
     Represents the state of the graph.
 
     Attributes:
-        question:   The user's input question.
-        generation: The final LLM-generated answer.
-        web_search: Flag indicating whether a web search step is needed.
-        documents:  Documents retrieved from the vector store (or web search).
+        question:        The user's input question.
+        generation:      The final LLM-generated answer.
+        web_search:      Flag indicating whether a web search step is needed.
+        documents:       Documents retrieved from the vector store (or web search).
+        relevance_ratio: Fraction of retrieved documents graded as relevant (0.0 – 1.0).
     """
 
     question: str
     generation: str
     web_search: bool
     documents: List[Document]
+    relevance_ratio: float

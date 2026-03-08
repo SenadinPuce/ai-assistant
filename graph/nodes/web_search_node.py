@@ -1,13 +1,14 @@
 import logging
 
 from langchain_core.documents import Document
-from langchain_tavily import TavilySearchResults
+from langchain_tavily import TavilySearch
 
+from graph.consts import WEB_SEARCH_MAX_RESULTS
 from graph.state import GraphState
 
 logger = logging.getLogger(__name__)
 
-_web_search_tool = TavilySearchResults(max_results=3)
+_web_search_tool = TavilySearch(max_results=WEB_SEARCH_MAX_RESULTS)
 
 
 def web_search(state: GraphState) -> GraphState:
@@ -24,7 +25,7 @@ def web_search(state: GraphState) -> GraphState:
     search_results = _web_search_tool.invoke({"query": question})
     new_docs = [
         Document(page_content=result["content"], metadata={"source": result.get("url", "")})
-        for result in search_results
+        for result in search_results["results"]
     ]
 
     return {

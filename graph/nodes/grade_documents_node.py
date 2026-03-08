@@ -1,6 +1,7 @@
 import logging
 
 from graph.chains.retrieval_grader_chain import retrieval_grader_chain
+from graph.consts import MIN_RELEVANCE_RATIO
 from graph.state import GraphState
 
 logger = logging.getLogger(__name__)
@@ -9,15 +10,30 @@ logger = logging.getLogger(__name__)
 def grade_documents(state: GraphState) -> GraphState:
     """Filter retrieved documents to those relevant to the question.
 
-    Sets ``web_search=True`` if any document is graded as not relevant,
-    signalling downstream nodes to supplement with a web search.
+    Uses a ratio-based threshold (``MIN_RELEVANCE_RATIO``) to decide
+    whether web search is needed, instead of triggering on any single
+    irrelevant document.
+
+    - If no documents were retrieved, ``web_search`` is set to ``True``
+      and grading is skipped entirely (no LLM calls wasted).
+    - If the fraction of relevant documents falls below the threshold,
+      ``web_search`` is set to ``True`` so downstream nodes supplement
+      with web results.
     """
     logger.info("Grading document relevance to question.")
     question = state["question"]
     documents = state["documents"]
 
+    # Edge case: no documents retrieved at all — skip grading, go to web search
+    if not documents:
+        logger.info("No documents retrieved — triggering web search.")
+        return {
+            "documents": [],
+            "web_search": True,
+            "relevance_ratio": 0.0,
+        }
+
     filtered_docs = []
-    web_search = False
 
     for doc in documents:
         score = retrieval_grader_chain.invoke(
@@ -27,7 +43,21 @@ def grade_documents(state: GraphState) -> GraphState:
             logger.info("Document graded as relevant.")
             filtered_docs.append(doc)
         else:
-            logger.info("Document graded as not relevant — web search flagged.")
-            web_search = True
+            logger.info("Document graded as not relevant.")
 
-    return {"documents": filtered_docs, "question": question, "web_search": web_search}
+    relevance_ratio = len(filtered_docs) / len(documents)
+    web_search = relevance_ratio < MIN_RELEVANCE_RATIO
+
+    logger.info(
+        "Relevance ratio: %.2f (%d/%d). Web search: %s.",
+        relevance_ratio,
+        len(filtered_docs),
+        len(documents),
+        web_search,
+    )
+
+    return {
+        "documents": filtered_docs,
+        "web_search": web_search,
+        "relevance_ratio": relevance_ratio,
+    }

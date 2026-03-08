@@ -4,7 +4,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+from graph.consts import LLM_MODEL
+
+_llm = ChatOpenAI(model=LLM_MODEL, temperature=0)
 
 
 class GradeDocument(BaseModel):

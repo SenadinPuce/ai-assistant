@@ -18,7 +18,13 @@ from graph.state import GraphState
 
 
 def _make_state(question: str, documents: list) -> GraphState:
-    return {"question": question, "documents": documents, "generation": "", "web_search": False}
+    return {
+        "question": question,
+        "documents": documents,
+        "generation": "",
+        "web_search": False,
+        "relevance_ratio": 0.0,
+    }
 
 
 def _grade(score: str) -> GradeDocument:
@@ -31,12 +37,12 @@ def _grade(score: str) -> GradeDocument:
 
 
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
-def test_grade_documents_filters_irrelevant(mock_grader: MagicMock) -> None:
-    """Irrelevant documents are removed and web_search is set to True."""
+def test_grade_documents_filters_irrelevant_above_threshold(mock_grader: MagicMock) -> None:
+    """2/3 relevant (0.67) is above the default 0.5 threshold — no web search."""
     mock_grader.invoke.side_effect = [_grade("yes"), _grade("no"), _grade("yes")]
     docs = [
         Document(page_content="relevant content A"),
-        Document(page_content="completely unrelated content "),
+        Document(page_content="completely unrelated content"),
         Document(page_content="relevant content B"),
     ]
 
@@ -45,12 +51,13 @@ def test_grade_documents_filters_irrelevant(mock_grader: MagicMock) -> None:
     assert len(result["documents"]) == 2
     assert result["documents"][0].page_content == "relevant content A"
     assert result["documents"][1].page_content == "relevant content B"
-    assert result["web_search"] is True
+    assert result["web_search"] is False
+    assert result["relevance_ratio"] == pytest.approx(2 / 3)
 
 
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
 def test_grade_documents_all_relevant(mock_grader: MagicMock) -> None:
-    """When all documents are relevant, web_search stays False."""
+    """When all documents are relevant, web_search stays False and ratio is 1.0."""
     mock_grader.invoke.return_value = _grade("yes")
     docs = [Document(page_content="doc A"), Document(page_content="doc B")]
 
@@ -58,6 +65,7 @@ def test_grade_documents_all_relevant(mock_grader: MagicMock) -> None:
 
     assert len(result["documents"]) == 2
     assert result["web_search"] is False
+    assert result["relevance_ratio"] == 1.0
 
 
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
@@ -70,27 +78,57 @@ def test_grade_documents_all_irrelevant(mock_grader: MagicMock) -> None:
 
     assert result["documents"] == []
     assert result["web_search"] is True
+    assert result["relevance_ratio"] == 0.0
 
 
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
 def test_grade_documents_empty_list(mock_grader: MagicMock) -> None:
-    """Empty document list returns empty result and web_search stays False."""
+    """Empty document list triggers web search directly — no LLM calls."""
     result = grade_documents(_make_state("poslovni sistemi", []))
 
     mock_grader.invoke.assert_not_called()
     assert result["documents"] == []
-    assert result["web_search"] is False
+    assert result["web_search"] is True
+    assert result["relevance_ratio"] == 0.0
 
 
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
-def test_grade_documents_preserves_question(mock_grader: MagicMock) -> None:
-    """The question is passed through unchanged in the returned state."""
-    mock_grader.invoke.return_value = _grade("yes")
-    docs = [Document(page_content="content")]
+def test_grade_documents_below_threshold(mock_grader: MagicMock) -> None:
+    """1/4 relevant (0.25) is below the 0.5 threshold — triggers web search."""
+    mock_grader.invoke.side_effect = [
+        _grade("yes"),
+        _grade("no"),
+        _grade("no"),
+        _grade("no"),
+    ]
+    docs = [
+        Document(page_content="relevant"),
+        Document(page_content="unrelated A"),
+        Document(page_content="unrelated B"),
+        Document(page_content="unrelated C"),
+    ]
 
-    result = grade_documents(_make_state("Sta su poslovni sistemi?", docs))
+    result = grade_documents(_make_state("poslovni sistemi", docs))
 
-    assert result["question"] == "Sta su poslovni sistemi?"
+    assert len(result["documents"]) == 1
+    assert result["web_search"] is True
+    assert result["relevance_ratio"] == pytest.approx(0.25)
+
+
+@patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
+def test_grade_documents_at_exact_threshold(mock_grader: MagicMock) -> None:
+    """Exactly at the threshold (0.5) — no web search (>= comparison)."""
+    mock_grader.invoke.side_effect = [_grade("yes"), _grade("no")]
+    docs = [
+        Document(page_content="relevant"),
+        Document(page_content="unrelated"),
+    ]
+
+    result = grade_documents(_make_state("poslovni sistemi", docs))
+
+    assert len(result["documents"]) == 1
+    assert result["web_search"] is False
+    assert result["relevance_ratio"] == 0.5
 
 # ---------------------------------------------------------------------------
 # Integration tests for retrieval_grader chain
@@ -161,6 +199,7 @@ def test_generate_answer_calls_chain_with_formatted_context(mock_chain: MagicMoc
         "documents": docs,
         "generation": "",
         "web_search": False,
+        "relevance_ratio": 0.0,
     }
 
     result = generate_answer(state)
@@ -180,6 +219,7 @@ def test_generate_answer_returns_generation_in_state(mock_chain: MagicMock) -> N
         "documents": [Document(page_content="Kontekst.")],
         "generation": "",
         "web_search": False,
+        "relevance_ratio": 0.0,
     }
 
     result = generate_answer(state)
