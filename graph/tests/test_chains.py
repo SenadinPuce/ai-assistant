@@ -8,7 +8,8 @@ from langchain_core.documents import Document
 load_dotenv()
 
 from graph.chains.generation_chain import generation_chain
-from graph.chains.retrieval_grader_chain import GradeDocument, retrieval_grader_chain
+from graph.chains.retrieval_grader_chain import retrieval_grader_chain
+from graph.models import GradeDocument
 from graph.nodes.generation_node import _format_context, generate_answer_node
 from graph.nodes.grade_documents_node import grade_documents_node
 from graph.state import GraphState

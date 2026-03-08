@@ -1,20 +1,10 @@
-from typing import Literal
-
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 from graph.consts import LLM_MODEL
+from graph.models.grade_document import GradeDocument
 
 _llm = ChatOpenAI(model=LLM_MODEL, temperature=0)
-
-
-class GradeDocument(BaseModel):
-    """Binary relevance score for a retrieved document."""
-
-    binary_score: Literal["yes", "no"] = Field(
-        description="'yes' if the document is relevant to the question, 'no' otherwise."
-    )
 
 
 _system = (

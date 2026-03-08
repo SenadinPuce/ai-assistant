@@ -1,8 +1,8 @@
 import os
 
 from dotenv import load_dotenv
-from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -82,9 +82,7 @@ def retrieve_with_score_filter(
     return [doc for doc, score in results if score >= score_threshold]
 
 
-def search_with_scores(
-    query: str, k: int = 4
-) -> list[tuple[Document, float]]:
+def search_with_scores(query: str, k: int = 4) -> list[tuple[Document, float]]:
     """Return (document, score) pairs and print them for inspection.
 
     Useful for debugging — call this directly to inspect what the retriever
