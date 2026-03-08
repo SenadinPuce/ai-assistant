@@ -13,7 +13,7 @@ def _format_context(documents: list[Document]) -> str:
     return "\n\n".join(doc.page_content for doc in documents)
 
 
-def generate_answer(state: GraphState) -> GraphState:
+def generate_answer_node(state: GraphState) -> GraphState:
     """Generate an answer to the question based on retrieved documents."""
     logger.info("Generating answer for question: %s", state["question"])
 

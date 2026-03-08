@@ -9,8 +9,8 @@ load_dotenv()
 
 from graph.chains.generation_chain import generation_chain
 from graph.chains.retrieval_grader_chain import GradeDocument, retrieval_grader_chain
-from graph.nodes.generation_node import _format_context, generate_answer
-from graph.nodes.grade_documents_node import grade_documents
+from graph.nodes.generation_node import _format_context, generate_answer_node
+from graph.nodes.grade_documents_node import grade_documents_node
 from graph.state import GraphState
 from ingestion import search_with_scores
 
@@ -50,7 +50,7 @@ def test_grade_documents_filters_irrelevant_above_threshold(
         Document(page_content="relevant content B"),
     ]
 
-    result = grade_documents(_make_state("poslovni sistemi", docs))
+    result = grade_documents_node(_make_state("poslovni sistemi", docs))
 
     assert len(result["documents"]) == 2
     assert result["documents"][0].page_content == "relevant content A"
@@ -65,7 +65,7 @@ def test_grade_documents_all_relevant(mock_grader: MagicMock) -> None:
     mock_grader.batch.return_value = [_grade("yes"), _grade("yes")]
     docs = [Document(page_content="doc A"), Document(page_content="doc B")]
 
-    result = grade_documents(_make_state("poslovni sistemi", docs))
+    result = grade_documents_node(_make_state("poslovni sistemi", docs))
 
     assert len(result["documents"]) == 2
     assert result["web_search"] is False
@@ -78,7 +78,7 @@ def test_grade_documents_all_irrelevant(mock_grader: MagicMock) -> None:
     mock_grader.batch.return_value = [_grade("no"), _grade("no")]
     docs = [Document(page_content="unrelated A"), Document(page_content="unrelated B")]
 
-    result = grade_documents(_make_state("poslovni sistemi", docs))
+    result = grade_documents_node(_make_state("poslovni sistemi", docs))
 
     assert result["documents"] == []
     assert result["web_search"] is True
@@ -88,7 +88,7 @@ def test_grade_documents_all_irrelevant(mock_grader: MagicMock) -> None:
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
 def test_grade_documents_empty_list(mock_grader: MagicMock) -> None:
     """Empty document list triggers web search directly — no LLM calls."""
-    result = grade_documents(_make_state("poslovni sistemi", []))
+    result = grade_documents_node(_make_state("poslovni sistemi", []))
 
     mock_grader.batch.assert_not_called()
     assert result["documents"] == []
@@ -112,7 +112,7 @@ def test_grade_documents_below_threshold(mock_grader: MagicMock) -> None:
         Document(page_content="unrelated C"),
     ]
 
-    result = grade_documents(_make_state("poslovni sistemi", docs))
+    result = grade_documents_node(_make_state("poslovni sistemi", docs))
 
     assert len(result["documents"]) == 1
     assert result["web_search"] is True
@@ -128,7 +128,7 @@ def test_grade_documents_at_exact_threshold(mock_grader: MagicMock) -> None:
         Document(page_content="unrelated"),
     ]
 
-    result = grade_documents(_make_state("poslovni sistemi", docs))
+    result = grade_documents_node(_make_state("poslovni sistemi", docs))
 
     assert len(result["documents"]) == 1
     assert result["web_search"] is False
@@ -209,7 +209,7 @@ def test_generate_answer_calls_chain_with_formatted_context(
         "relevance_ratio": 0.0,
     }
 
-    result = generate_answer(state)
+    result = generate_answer_node(state)
 
     mock_chain.invoke.assert_called_once_with(
         {"question": "Sta su poslovni sistemi?", "context": "Dio A.\n\nDio B."}
@@ -229,7 +229,7 @@ def test_generate_answer_returns_generation_in_state(mock_chain: MagicMock) -> N
         "relevance_ratio": 0.0,
     }
 
-    result = generate_answer(state)
+    result = generate_answer_node(state)
 
     assert result["generation"] == "Odgovor."
 

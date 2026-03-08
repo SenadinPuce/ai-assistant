@@ -7,7 +7,7 @@ from graph.state import GraphState
 logger = logging.getLogger(__name__)
 
 
-def grade_documents(state: GraphState) -> GraphState:
+def grade_documents_node(state: GraphState) -> GraphState:
     """Filter retrieved documents to those relevant to the question.
 
     Uses a ratio-based threshold (``MIN_RELEVANCE_RATIO``) to decide

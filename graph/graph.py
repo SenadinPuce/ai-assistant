@@ -3,7 +3,7 @@ import logging
 from langgraph.graph import END, StateGraph
 
 from graph.consts import GENERATE_ANSWER, GRADE_DOCUMENTS, RETRIEVE, WEB_SEARCH
-from graph.nodes import generate_answer, grade_documents, retrieve_documents, web_search
+from graph.nodes import generate_answer_node, grade_documents_node, retrieve_documents_node, web_search_node
 from graph.state import GraphState
 
 logger = logging.getLogger(__name__)
@@ -28,10 +28,10 @@ def build_graph() -> StateGraph:
     """Construct and compile the CRAG workflow graph."""
     workflow = StateGraph(GraphState)
 
-    workflow.add_node(RETRIEVE, retrieve_documents)
-    workflow.add_node(GRADE_DOCUMENTS, grade_documents)
-    workflow.add_node(WEB_SEARCH, web_search)
-    workflow.add_node(GENERATE_ANSWER, generate_answer)
+    workflow.add_node(RETRIEVE, retrieve_documents_node)
+    workflow.add_node(GRADE_DOCUMENTS, grade_documents_node)
+    workflow.add_node(WEB_SEARCH, web_search_node)
+    workflow.add_node(GENERATE_ANSWER, generate_answer_node)
 
     workflow.set_entry_point(RETRIEVE)
     workflow.add_edge(RETRIEVE, GRADE_DOCUMENTS)

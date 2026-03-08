@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 _web_search_tool = TavilySearch(max_results=WEB_SEARCH_MAX_RESULTS)
 
 
-def web_search(state: GraphState) -> GraphState:
+def web_search_node(state: GraphState) -> GraphState:
     """Perform a web search and append results as Documents to the state.
 
     Each search result becomes its own Document so downstream grading
