@@ -42,7 +42,7 @@ def ingest_documents(pdf_dir: str = PDF_DIR) -> None:
 
     docs = PyPDFDirectoryLoader(pdf_dir).load()
     doc_splits = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=250, chunk_overlap=0
+        chunk_size=512, chunk_overlap=64
     ).split_documents(docs)
 
     PineconeVectorStore.from_documents(
