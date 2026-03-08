@@ -1,8 +1,8 @@
 import logging
 
-from graph.chains.retrieval_grader_chain import retrieval_grader_chain
-from graph.consts import MIN_RELEVANCE_RATIO
-from graph.state import GraphState
+from rag.chains.retrieval_grader import retrieval_grader_chain
+from rag.constants import MIN_RELEVANCE_RATIO
+from rag.state import GraphState
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def grade_documents_node(state: GraphState) -> GraphState:
 
     filtered_docs = []
     for doc, score in zip(documents, scores):
-        if score.binary_score == "yes":
+        if score.binary_score:
             logger.info("Document graded as relevant.")
             filtered_docs.append(doc)
         else:

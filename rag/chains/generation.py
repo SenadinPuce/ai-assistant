@@ -2,7 +2,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from graph.consts import LLM_MODEL
+from rag.constants import LLM_MODEL
 
 _llm = ChatOpenAI(model=LLM_MODEL, temperature=0)
 

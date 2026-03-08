@@ -3,8 +3,8 @@ import logging
 from langchain_core.documents import Document
 from langchain_tavily import TavilySearch
 
-from graph.consts import WEB_SEARCH_MAX_RESULTS
-from graph.state import GraphState
+from rag.constants import WEB_SEARCH_MAX_RESULTS
+from rag.state import GraphState
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,5 @@ def web_search_node(state: GraphState) -> GraphState:
 
     return {
         "documents": existing_docs + new_docs,
-        "question": question,
         "web_search": False,
     }

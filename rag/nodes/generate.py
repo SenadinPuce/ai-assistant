@@ -2,8 +2,8 @@ import logging
 
 from langchain_core.documents import Document
 
-from graph.chains.generation_chain import generation_chain
-from graph.state import GraphState
+from rag.chains.generation import generation_chain
+from rag.state import GraphState
 
 logger = logging.getLogger(__name__)
 
@@ -22,4 +22,4 @@ def generate_answer_node(state: GraphState) -> GraphState:
 
     generation = generation_chain.invoke({"question": question, "context": context})
 
-    return {"generation": generation, "question": question}
+    return {"generation": generation}
