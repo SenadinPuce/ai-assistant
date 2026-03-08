@@ -33,12 +33,11 @@ def grade_documents(state: GraphState) -> GraphState:
             "relevance_ratio": 0.0,
         }
 
-    filtered_docs = []
+    inputs = [{"question": question, "document": doc.page_content} for doc in documents]
+    scores = retrieval_grader_chain.batch(inputs)
 
-    for doc in documents:
-        score = retrieval_grader_chain.invoke(
-            {"question": question, "document": doc.page_content}
-        )
+    filtered_docs = []
+    for doc, score in zip(documents, scores):
         if score.binary_score == "yes":
             logger.info("Document graded as relevant.")
             filtered_docs.append(doc)

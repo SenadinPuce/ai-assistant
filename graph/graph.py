@@ -50,4 +50,3 @@ def build_graph() -> StateGraph:
 
 
 app = build_graph()
-

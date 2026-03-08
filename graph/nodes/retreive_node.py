@@ -1,13 +1,8 @@
-from langchain_core.documents import Document
-
 from graph.state import GraphState
-from ingestion import get_retriever
-
-
-_retriever = get_retriever()
+from ingestion import retrieve_with_score_filter
 
 
 def retrieve_documents(state: GraphState) -> GraphState:
     """Retrieve documents relevant to the question in the current graph state."""
-    documents: list[Document] = _retriever.invoke(state["question"])
+    documents = retrieve_with_score_filter(state["question"])
     return {"documents": documents}

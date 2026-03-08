@@ -24,7 +24,9 @@ def web_search(state: GraphState) -> GraphState:
 
     search_results = _web_search_tool.invoke({"query": question})
     new_docs = [
-        Document(page_content=result["content"], metadata={"source": result.get("url", "")})
+        Document(
+            page_content=result["content"], metadata={"source": result.get("url", "")}
+        )
         for result in search_results["results"]
     ]
 

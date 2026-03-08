@@ -7,10 +7,12 @@ from langchain_core.documents import Document
 
 load_dotenv()
 
+from graph.chains.generation_chain import generation_chain
 from graph.chains.retrieval_grader_chain import GradeDocument, retrieval_grader_chain
 from graph.nodes.generation_node import _format_context, generate_answer
 from graph.nodes.grade_documents_node import grade_documents
 from graph.state import GraphState
+from ingestion import search_with_scores
 
 # ---------------------------------------------------------------------------
 # Helper functions for tests
@@ -37,9 +39,11 @@ def _grade(score: str) -> GradeDocument:
 
 
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
-def test_grade_documents_filters_irrelevant_above_threshold(mock_grader: MagicMock) -> None:
+def test_grade_documents_filters_irrelevant_above_threshold(
+    mock_grader: MagicMock,
+) -> None:
     """2/3 relevant (0.67) is above the default 0.5 threshold — no web search."""
-    mock_grader.invoke.side_effect = [_grade("yes"), _grade("no"), _grade("yes")]
+    mock_grader.batch.return_value = [_grade("yes"), _grade("no"), _grade("yes")]
     docs = [
         Document(page_content="relevant content A"),
         Document(page_content="completely unrelated content"),
@@ -58,7 +62,7 @@ def test_grade_documents_filters_irrelevant_above_threshold(mock_grader: MagicMo
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
 def test_grade_documents_all_relevant(mock_grader: MagicMock) -> None:
     """When all documents are relevant, web_search stays False and ratio is 1.0."""
-    mock_grader.invoke.return_value = _grade("yes")
+    mock_grader.batch.return_value = [_grade("yes"), _grade("yes")]
     docs = [Document(page_content="doc A"), Document(page_content="doc B")]
 
     result = grade_documents(_make_state("poslovni sistemi", docs))
@@ -71,7 +75,7 @@ def test_grade_documents_all_relevant(mock_grader: MagicMock) -> None:
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
 def test_grade_documents_all_irrelevant(mock_grader: MagicMock) -> None:
     """When all documents are irrelevant, result is empty and web_search is True."""
-    mock_grader.invoke.return_value = _grade("no")
+    mock_grader.batch.return_value = [_grade("no"), _grade("no")]
     docs = [Document(page_content="unrelated A"), Document(page_content="unrelated B")]
 
     result = grade_documents(_make_state("poslovni sistemi", docs))
@@ -86,7 +90,7 @@ def test_grade_documents_empty_list(mock_grader: MagicMock) -> None:
     """Empty document list triggers web search directly — no LLM calls."""
     result = grade_documents(_make_state("poslovni sistemi", []))
 
-    mock_grader.invoke.assert_not_called()
+    mock_grader.batch.assert_not_called()
     assert result["documents"] == []
     assert result["web_search"] is True
     assert result["relevance_ratio"] == 0.0
@@ -95,7 +99,7 @@ def test_grade_documents_empty_list(mock_grader: MagicMock) -> None:
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
 def test_grade_documents_below_threshold(mock_grader: MagicMock) -> None:
     """1/4 relevant (0.25) is below the 0.5 threshold — triggers web search."""
-    mock_grader.invoke.side_effect = [
+    mock_grader.batch.return_value = [
         _grade("yes"),
         _grade("no"),
         _grade("no"),
@@ -118,7 +122,7 @@ def test_grade_documents_below_threshold(mock_grader: MagicMock) -> None:
 @patch("graph.nodes.grade_documents_node.retrieval_grader_chain")
 def test_grade_documents_at_exact_threshold(mock_grader: MagicMock) -> None:
     """Exactly at the threshold (0.5) — no web search (>= comparison)."""
-    mock_grader.invoke.side_effect = [_grade("yes"), _grade("no")]
+    mock_grader.batch.return_value = [_grade("yes"), _grade("no")]
     docs = [
         Document(page_content="relevant"),
         Document(page_content="unrelated"),
@@ -129,6 +133,7 @@ def test_grade_documents_at_exact_threshold(mock_grader: MagicMock) -> None:
     assert len(result["documents"]) == 1
     assert result["web_search"] is False
     assert result["relevance_ratio"] == 0.5
+
 
 # ---------------------------------------------------------------------------
 # Integration tests for retrieval_grader chain
@@ -187,7 +192,9 @@ def test_format_context_empty_list() -> None:
 
 
 @patch("graph.nodes.generation_node.generation_chain")
-def test_generate_answer_calls_chain_with_formatted_context(mock_chain: MagicMock) -> None:
+def test_generate_answer_calls_chain_with_formatted_context(
+    mock_chain: MagicMock,
+) -> None:
     """generate_answer formats documents and passes them as a string to the chain."""
     mock_chain.invoke.return_value = "Poslovni sistemi su..."
     docs = [
@@ -228,15 +235,13 @@ def test_generate_answer_returns_generation_in_state(mock_chain: MagicMock) -> N
 
 
 # ---------------------------------------------------------------------------
-# Integration test — generation chain
+# Integration tests — generation chain
 # ---------------------------------------------------------------------------
 
 
 @_skip_integration
 def test_generation_chain_produces_answer() -> None:
     """Integration: generation chain returns a non-empty string answer."""
-    from graph.chains.generation_chain import generation_chain
-
     result: str = generation_chain.invoke(
         {
             "question": "Sta su poslovni sistemi?",
@@ -250,3 +255,19 @@ def test_generation_chain_produces_answer() -> None:
     assert isinstance(result, str)
     assert len(result) > 0
 
+
+# ---------------------------------------------------------------------------
+# Integration tests — retrieval with scores
+# ---------------------------------------------------------------------------
+
+
+@_skip_integration
+def test_search_with_scores_returns_scored_results() -> None:
+    """Integration: search_with_scores returns documents with cosine similarity scores."""
+    results = search_with_scores(
+        "Šta su poslovni sistemi i koje su njihove ključne komponente?", k=4
+    )
+
+    assert len(results) == 4
+    for _doc, score in results:
+        assert 0.0 <= score <= 1.0

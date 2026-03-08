@@ -31,7 +31,7 @@ PDF_DIR = "./docs"
 # Minimum cosine similarity for a document to be considered a candidate.
 # Documents below this threshold are discarded before LLM grading,
 # saving API calls on obviously irrelevant chunks.
-SIMILARITY_THRESHOLD = 0.3
+SIMILARITY_THRESHOLD = 0.45
 
 # ---------------------------------------------------------------------------
 # Grading settings
