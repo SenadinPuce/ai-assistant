@@ -31,9 +31,11 @@ def test_format_context_empty_list() -> None:
 # ---------------------------------------------------------------------------
 
 
+@patch("rag.nodes.generate.detect_language", return_value="Bosnian")
 @patch("rag.nodes.generate.generation_chain")
 def test_generate_answer_calls_chain_with_formatted_context(
     mock_chain: MagicMock,
+    _mock_lang: MagicMock,
 ) -> None:
     """generate_answer formats documents and passes them as a string to the chain."""
     mock_chain.invoke.return_value = "Poslovni sistemi su..."
@@ -52,7 +54,7 @@ def test_generate_answer_calls_chain_with_formatted_context(
     result = generate_answer_node(state)
 
     mock_chain.invoke.assert_called_once_with(
-        {"question": "Sta su poslovni sistemi?", "context": "Dio A.\n\nDio B."}
+        {"question": "Sta su poslovni sistemi?", "context": "Dio A.\n\nDio B.", "language": "Bosnian"}
     )
     assert result["generation"] == "Poslovni sistemi su..."
 

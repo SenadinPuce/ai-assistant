@@ -1,7 +1,7 @@
 import logging
 
-
 from rag.chains.generation import generation_chain
+from rag.language import detect_language
 from rag.state import GraphState
 
 logger = logging.getLogger(__name__)
@@ -12,6 +12,8 @@ def direct_answer_node(state: GraphState) -> GraphState:
     logger.info("Routing to direct answer (no retrieval needed).")
 
     question = state["question"]
-    generation = generation_chain.invoke({"question": question, "context": ""})
+    language = detect_language(question)
+
+    generation = generation_chain.invoke({"question": question, "context": "", "language": language})
 
     return {"generation": generation, "documents": []}

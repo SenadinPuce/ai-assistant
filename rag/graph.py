@@ -6,7 +6,7 @@ from rag.chains.question_router import question_router_chain
 from rag.constants import (
     DIRECT_ANSWER,
     GENERATE_ANSWER,
-    GRADE_DOCUMENTS,
+    RERANK_DOCUMENTS,
     RETRIEVE,
     ROUTE_QUESTION,
     WEB_SEARCH,
@@ -14,7 +14,7 @@ from rag.constants import (
 from rag.nodes import (
     direct_answer_node,
     generate_answer_node,
-    grade_documents_node,
+    rerank_documents_node,
     retrieve_documents_node,
     web_search_node,
 )
@@ -34,10 +34,10 @@ def _route_question(state: GraphState) -> str:
 
 
 def _decide_to_generate(state: GraphState) -> str:
-    """Route after grading: trigger web search if relevance ratio is too low."""
+    """Route after reranking: trigger web search if no relevant documents survived."""
     if state["web_search"]:
         logger.info(
-            "Decision: relevance ratio %.2f below threshold — running web search.",
+            "Decision: relevance ratio %.2f — no relevant docs, running web search.",
             state.get("relevance_ratio", 0.0),
         )
         return WEB_SEARCH
@@ -52,9 +52,9 @@ def build_graph() -> StateGraph:
     """Construct and compile the CRAG workflow graph with question routing."""
     workflow = StateGraph(GraphState)
 
-    workflow.add_node(ROUTE_QUESTION, lambda state: state)  # passthrough; routing is in the edge
+    workflow.add_node(ROUTE_QUESTION, lambda state: state)
     workflow.add_node(RETRIEVE, retrieve_documents_node)
-    workflow.add_node(GRADE_DOCUMENTS, grade_documents_node)
+    workflow.add_node(RERANK_DOCUMENTS, rerank_documents_node)
     workflow.add_node(WEB_SEARCH, web_search_node)
     workflow.add_node(GENERATE_ANSWER, generate_answer_node)
     workflow.add_node(DIRECT_ANSWER, direct_answer_node)
@@ -68,9 +68,9 @@ def build_graph() -> StateGraph:
             DIRECT_ANSWER: DIRECT_ANSWER,
         },
     )
-    workflow.add_edge(RETRIEVE, GRADE_DOCUMENTS)
+    workflow.add_edge(RETRIEVE, RERANK_DOCUMENTS)
     workflow.add_conditional_edges(
-        GRADE_DOCUMENTS,
+        RERANK_DOCUMENTS,
         _decide_to_generate,
         {
             WEB_SEARCH: WEB_SEARCH,

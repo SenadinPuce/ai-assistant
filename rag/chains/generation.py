@@ -11,18 +11,19 @@ _llm = ChatOpenAI(model=LLM_MODEL, temperature=0)
 _prompt = ChatPromptTemplate.from_messages(
     [
         (
-            "human",
+            "system",
             (
                 "You are an assistant for question-answering tasks. "
-                "Use the following retrieved context to answer the question. "
+                "Use the retrieved context to answer the question. "
                 "If you don't know the answer, say that you don't know. "
                 "Keep the answer concise — three sentences maximum. "
-                "Always answer in the same language as the question.\n\n"
-                "Context: {context}\n\n"
-                "Question: {question}\n\n"
-                "Answer:"
+                "You MUST respond in {language}. Do not use any other language."
             ),
-        )
+        ),
+        (
+            "human",
+            "Context: {context}\n\nQuestion: {question}",
+        ),
     ]
 )
 

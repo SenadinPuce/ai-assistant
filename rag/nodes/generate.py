@@ -3,6 +3,7 @@ import logging
 from langchain_core.documents import Document
 
 from rag.chains.generation import generation_chain
+from rag.language import detect_language
 from rag.state import GraphState
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,8 @@ def generate_answer_node(state: GraphState) -> GraphState:
 
     question = state["question"]
     context = _format_context(state["documents"])
+    language = detect_language(question)
 
-    generation = generation_chain.invoke({"question": question, "context": context})
+    generation = generation_chain.invoke({"question": question, "context": context, "language": language})
 
     return {"generation": generation}

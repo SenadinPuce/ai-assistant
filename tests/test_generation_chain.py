@@ -18,6 +18,7 @@ def test_generation_chain_produces_answer() -> None:
     result: str = generation_chain.invoke(
         {
             "question": "Sta su poslovni sistemi?",
+            "language": "Bosnian",
             "context": (
                 "Poslovni sistem predstavlja skup proizvodnih, ekonomskih i "
                 "društvenih podsistema koji povezuju okolinu sa proizvodnim sistemima."

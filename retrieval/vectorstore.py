@@ -8,6 +8,7 @@ from retrieval.config import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,
     PINECONE_INDEX_NAME,
+    RETRIEVAL_K,
     SIMILARITY_THRESHOLD,
 )
 
@@ -27,7 +28,7 @@ def get_vectorstore() -> PineconeVectorStore:
 
 def retrieve_with_score_filter(
     query: str,
-    k: int = 4,
+    k: int = RETRIEVAL_K,
     score_threshold: float = SIMILARITY_THRESHOLD,
 ) -> list:
     """Return documents whose cosine similarity meets the threshold."""
