@@ -1,10 +1,12 @@
 # ---------------------------------------------------------------------------
 # Graph node names
 # ---------------------------------------------------------------------------
+ROUTE_QUESTION = "route_question"
 RETRIEVE = "retrieve"
 GRADE_DOCUMENTS = "grade_documents"
 WEB_SEARCH = "web_search"
 GENERATE_ANSWER = "generate_answer"
+DIRECT_ANSWER = "direct_answer"
 
 # ---------------------------------------------------------------------------
 # LLM settings
