@@ -1,14 +1,17 @@
 import logging
 import warnings
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Pre-load heavy local models (sentence-transformers, lingua) once at startup
+# so the first request isn't penalised by cold-start latency.
 from rag.reranker import _get_reranker
 from rag.language import _get_detector
 
 _get_reranker()
 _get_detector()
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
