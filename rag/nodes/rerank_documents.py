@@ -15,7 +15,7 @@ def rerank_documents_node(state: GraphState) -> GraphState:
     set to ``True`` so downstream nodes supplement with web results.
     """
     logger.info("Reranking documents for relevance to question.")
-    question = state["question"]
+    question = state.get("original_question") or state["question"]
     documents = state["documents"]
 
     if not documents:

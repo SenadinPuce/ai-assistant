@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from langchain_core.documents import Document
 
@@ -14,6 +15,39 @@ def _format_context(documents: list[Document]) -> str:
     return "\n\n".join(doc.page_content for doc in documents)
 
 
+def _source_label(path: str) -> str:
+    """Extract a file name from a full path."""
+    return path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] if path else "unknown"
+
+
+def _extract_sources(documents: list[Document]) -> list[dict[str, Any]]:
+    """Build a deduplicated list of source references from document metadata."""
+    seen: set[tuple] = set()
+    sources: list[dict[str, Any]] = []
+
+    for doc in documents:
+        meta = doc.metadata or {}
+        source = meta.get("source", "")
+
+        if "page" in meta:
+            key = (source, meta["page"])
+            if key in seen:
+                continue
+            seen.add(key)
+            sources.append({
+                "source": _source_label(source),
+                "page": meta["page"] + 1,
+            })
+        elif source:
+            key = (source,)
+            if key in seen:
+                continue
+            seen.add(key)
+            sources.append({"url": source})
+
+    return sources
+
+
 def generate_answer_node(state: GraphState) -> GraphState:
     """Generate an answer to the question based on retrieved documents."""
     question = state.get("original_question") or state["question"]
@@ -23,5 +57,6 @@ def generate_answer_node(state: GraphState) -> GraphState:
     language = detect_language(question)
 
     generation = generation_chain.invoke({"question": question, "context": context, "language": language})
+    sources = _extract_sources(state["documents"])
 
-    return {"generation": generation}
+    return {"generation": generation, "sources": sources}
