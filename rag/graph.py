@@ -8,6 +8,7 @@ from rag.constants import (
     GENERATE_ANSWER,
     RERANK_DOCUMENTS,
     RETRIEVE,
+    REWRITE_QUERY,
     ROUTE_QUESTION,
     WEB_SEARCH,
 )
@@ -16,6 +17,7 @@ from rag.nodes import (
     generate_answer_node,
     rerank_documents_node,
     retrieve_documents_node,
+    rewrite_query_node,
     web_search_node,
 )
 from rag.state import GraphState
@@ -28,7 +30,7 @@ def _route_question(state: GraphState) -> str:
     result = question_router_chain.invoke({"question": state["question"]})
     if result.datasource == "vectorstore":
         logger.info("Router decision: question requires retrieval.")
-        return RETRIEVE
+        return REWRITE_QUERY
     logger.info("Router decision: answering directly (no retrieval needed).")
     return DIRECT_ANSWER
 
@@ -53,6 +55,7 @@ def build_graph() -> StateGraph:
     workflow = StateGraph(GraphState)
 
     workflow.add_node(ROUTE_QUESTION, lambda state: state)
+    workflow.add_node(REWRITE_QUERY, rewrite_query_node)
     workflow.add_node(RETRIEVE, retrieve_documents_node)
     workflow.add_node(RERANK_DOCUMENTS, rerank_documents_node)
     workflow.add_node(WEB_SEARCH, web_search_node)
@@ -64,10 +67,11 @@ def build_graph() -> StateGraph:
         ROUTE_QUESTION,
         _route_question,
         {
-            RETRIEVE: RETRIEVE,
+            REWRITE_QUERY: REWRITE_QUERY,
             DIRECT_ANSWER: DIRECT_ANSWER,
         },
     )
+    workflow.add_edge(REWRITE_QUERY, RETRIEVE)
     workflow.add_edge(RETRIEVE, RERANK_DOCUMENTS)
     workflow.add_conditional_edges(
         RERANK_DOCUMENTS,

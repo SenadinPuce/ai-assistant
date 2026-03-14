@@ -28,5 +28,6 @@ if __name__ == "__main__":
             {
                 "question": "Šta su poslovni sistemi i koje su njihove ključne komponente?"
             }
-        )
+        ) 
     )
+

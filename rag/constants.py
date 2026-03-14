@@ -2,6 +2,7 @@
 # Graph node names
 # ---------------------------------------------------------------------------
 ROUTE_QUESTION = "route_question"
+REWRITE_QUERY = "rewrite_query"
 RETRIEVE = "retrieve"
 RERANK_DOCUMENTS = "rerank_documents"
 WEB_SEARCH = "web_search"

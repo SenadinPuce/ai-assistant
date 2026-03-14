@@ -16,9 +16,9 @@ def _format_context(documents: list[Document]) -> str:
 
 def generate_answer_node(state: GraphState) -> GraphState:
     """Generate an answer to the question based on retrieved documents."""
-    logger.info("Generating answer for question: %s", state["question"])
+    question = state.get("original_question") or state["question"]
+    logger.info("Generating answer for question: %s", question)
 
-    question = state["question"]
     context = _format_context(state["documents"])
     language = detect_language(question)
 
