@@ -1,5 +1,5 @@
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
 from rag.constants import LLM_MODEL
@@ -20,6 +20,7 @@ _prompt = ChatPromptTemplate.from_messages(
                 "You MUST respond in {language}. Do not use any other language."
             ),
         ),
+        MessagesPlaceholder(variable_name="chat_history", optional=True),
         (
             "human",
             "Context: {context}\n\nQuestion: {question}",

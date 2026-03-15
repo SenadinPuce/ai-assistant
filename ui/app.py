@@ -21,9 +21,16 @@ if prompt := st.chat_input("Postavite pitanje…"):
     with st.chat_message("assistant"):
         with st.spinner("Generiše se odgovor…"):
             try:
+                # Send the last 10 messages (5 turns) as history,
+                # excluding the current question (already in "question").
+                history = [
+                    {"role": m["role"], "content": m["content"]}
+                    for m in st.session_state.messages[-11:-1]
+                ]
+
                 resp = requests.post(
                     f"{API_URL}/chat",
-                    json={"question": prompt},
+                    json={"question": prompt, "history": history},
                     timeout=120,
                 )
                 resp.raise_for_status()

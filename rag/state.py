@@ -15,6 +15,7 @@ class GraphState(TypedDict):
         documents:         Documents retrieved from the vector store (or web search).
         relevance_ratio:   Fraction of retrieved documents graded as relevant (0.0 – 1.0).
         sources:           Deduplicated source references extracted from retrieved documents.
+        chat_history:      Prior conversation turns for multi-turn context.
     """
 
     question: str
@@ -24,3 +25,4 @@ class GraphState(TypedDict):
     documents: List[Document]
     relevance_ratio: float
     sources: List[dict[str, Any]]
+    chat_history: List[dict[str, str]]

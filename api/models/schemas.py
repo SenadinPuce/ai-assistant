@@ -1,10 +1,18 @@
 from pydantic import BaseModel, Field
 
 
+class ChatMessage(BaseModel):
+    """A single message in the conversation history."""
+
+    role: str
+    content: str
+
+
 class QuestionRequest(BaseModel):
     """Incoming user question."""
 
     question: str = Field(..., min_length=1, max_length=2000)
+    history: list[ChatMessage] = []
 
 
 class SourceReference(BaseModel):

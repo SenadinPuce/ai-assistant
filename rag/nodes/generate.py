@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from langchain_core.documents import Document
+from langchain_core.messages import AIMessage, HumanMessage
 
 from rag.chains.generation import generation_chain
 from rag.language import detect_language
@@ -56,7 +57,17 @@ def generate_answer_node(state: GraphState) -> GraphState:
     context = _format_context(state["documents"])
     language = detect_language(question)
 
-    generation = generation_chain.invoke({"question": question, "context": context, "language": language})
+    chat_history = [
+        HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"])
+        for m in state.get("chat_history") or []
+    ]
+
+    generation = generation_chain.invoke({
+        "question": question,
+        "context": context,
+        "language": language,
+        "chat_history": chat_history,
+    })
     sources = _extract_sources(state["documents"])
 
     return {"generation": generation, "sources": sources}

@@ -11,7 +11,7 @@ load_dotenv()
 from rag.language import _get_detector
 from rag.reranker import _get_reranker
 
-from api.models.schemas import AnswerResponse, QuestionRequest, SourceReference
+from api.models.schemas import AnswerResponse, ChatMessage, QuestionRequest, SourceReference
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
@@ -61,7 +61,13 @@ async def chat(body: QuestionRequest):
     """Run the RAG workflow and return the generated answer with sources."""
     logger.info("Received question: %s", body.question)
 
-    result = app.state.rag.invoke({"question": body.question})
+    chat_history = [
+        {"role": msg.role, "content": msg.content} for msg in body.history
+    ]
+
+    result = app.state.rag.invoke(
+        {"question": body.question, "chat_history": chat_history}
+    )
 
     sources = [
         SourceReference(**src) for src in result.get("sources") or []

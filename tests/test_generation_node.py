@@ -54,7 +54,7 @@ def test_generate_answer_calls_chain_with_formatted_context(
     result = generate_answer_node(state)
 
     mock_chain.invoke.assert_called_once_with(
-        {"question": "Sta su poslovni sistemi?", "context": "Dio A.\n\nDio B.", "language": "Bosnian"}
+        {"question": "Sta su poslovni sistemi?", "context": "Dio A.\n\nDio B.", "language": "Bosnian", "chat_history": []}
     )
     assert result["generation"] == "Poslovni sistemi su..."
 
