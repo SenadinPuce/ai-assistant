@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import warnings
 from contextlib import asynccontextmanager
@@ -65,8 +66,9 @@ async def chat(body: QuestionRequest):
         {"role": msg.role, "content": msg.content} for msg in body.history
     ]
 
-    result = app.state.rag.invoke(
-        {"question": body.question, "chat_history": chat_history}
+    result = await asyncio.to_thread(
+        app.state.rag.invoke,
+        {"question": body.question, "chat_history": chat_history},
     )
 
     sources = [
