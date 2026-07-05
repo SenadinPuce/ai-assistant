@@ -125,7 +125,28 @@ st.header(current_chat["title"])
 messages = store.get_messages(st.session_state.current_chat_id)
 for msg in messages:
     with st.chat_message(msg["role"]):
+
         st.markdown(msg["content"])
+
+        if msg["role"] == "assistant" and msg.get("sources"):
+
+            with st.expander("Izvori"):
+
+                for src in msg["sources"]:
+
+                    if src.get("source"):
+
+                        label = src["source"]
+
+                        if src.get("page"):
+                            label += f", str. {src['page']}"
+
+                        st.markdown(f"- {label}")
+
+                    elif src.get("url"):
+                        st.markdown(
+                            f"- {src['url']}"
+                        )
 
 if prompt := st.chat_input("Postavite pitanje…"):
     store.add_message(st.session_state.current_chat_id, "user", prompt)
@@ -171,19 +192,8 @@ if prompt := st.chat_input("Postavite pitanje…"):
                             elif src.get("url"):
                                 st.markdown(f"- [{src['url']}]({src['url']})")
 
-                stored = answer
-                if sources:
-                    stored += "\n\n**Izvori:**\n"
-                    for src in sources:
-                        if src.get("source"):
-                            line = src["source"]
-                            if src.get("page"):
-                                line += f", str. {src['page']}"
-                            stored += f"- {line}\n"
-                        elif src.get("url"):
-                            stored += f"- [{src['url']}]({src['url']})\n"
-
-                store.add_message(st.session_state.current_chat_id, "assistant", stored)
+              
+                store.add_message(st.session_state.current_chat_id, "assistant", answer, sources=sources)
 
             except requests.exceptions.ConnectionError:
                 st.error("Nije moguće povezati se sa API serverom.")

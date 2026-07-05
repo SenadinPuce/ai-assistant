@@ -2,6 +2,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 
 
 def _now() -> str:
@@ -42,6 +43,7 @@ class ChatStore:
                     chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
                     role       TEXT NOT NULL,
                     content    TEXT NOT NULL,
+                    sources    TEXT NULL,
                     created_at TEXT NOT NULL
                 );
                 """
@@ -87,25 +89,76 @@ class ChatStore:
             ).fetchone()
         return self._row_to_dict(row) if row else None
 
-    def get_messages(self, chat_id: str) -> list[dict]:
+    def get_messages(self, chat_id: str) -> list: 
         """Return all messages for a chat in chronological order."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC",
+                """
+                SELECT role, content, sources
+                FROM messages
+                WHERE chat_id = ?
+                ORDER BY id ASC
+                """,
                 (chat_id,),
             ).fetchall()
-        return [self._row_to_dict(r) for r in rows]
 
-    def add_message(self, chat_id: str, role: str, content: str) -> None:
+        messages = []
+
+        for row in rows:
+            msg = self._row_to_dict(row)
+
+            try:
+                msg["sources"] = (
+                    json.loads(msg["sources"])
+                    if msg["sources"]
+                    else []
+                )
+            except Exception:
+                msg["sources"] = []
+
+            messages.append(msg)
+
+        return messages
+
+    def add_message(
+        self,
+        chat_id: str,
+        role: str,
+        content: str,
+        sources: list | None = None,
+    ) -> None:
         """Append a message and bump the chat's updated_at timestamp."""
+
         now = _now()
+
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                (chat_id, role, content, now),
+                """
+                INSERT INTO messages
+                (
+                    chat_id,
+                    role,
+                    content,
+                    sources,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    chat_id,
+                    role,
+                    content,
+                    json.dumps(sources) if sources else None,
+                    now,
+                ),
             )
+
             conn.execute(
-                "UPDATE chats SET updated_at = ? WHERE id = ?",
+                """
+                UPDATE chats
+                SET updated_at = ?
+                WHERE id = ?
+                """,
                 (now, chat_id),
             )
 
