@@ -1,8 +1,11 @@
 import os
 import time
+from pathlib import Path
+from typing import Iterable
 
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain_core.documents import Document
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone, ServerlessSpec
@@ -15,6 +18,17 @@ from retrieval.config import (
     PINECONE_INDEX_NAME,
 )
 from retrieval.vectorstore import _get_embeddings
+
+SUPPORTED_UPLOAD_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".pdf",
+    ".docx",
+    ".csv",
+    ".json",
+    ".html",
+    ".htm",
+}
 
 
 def _ensure_index_exists() -> None:
@@ -52,14 +66,68 @@ def _ensure_index_exists() -> None:
     )
 
 
-def ingest_documents(pdf_dir: str = PDF_DIR) -> None:
-    """Load PDFs, split into chunks, and upsert into Pinecone.
+def extract_text_from_file(file_path: str | Path) -> str:
+    """Extract text from a supported file type."""
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+
+    if suffix in {".txt", ".md", ".csv", ".json", ".html", ".htm"}:
+        return path.read_text(encoding="utf-8", errors="ignore")
+
+    if suffix == ".pdf":
+        from pypdf import PdfReader
+
+        reader = PdfReader(str(path))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    if suffix == ".docx":
+        try:
+            from docx import Document as DocxDocument
+        except ImportError as exc:  # pragma: no cover - exercised only if package is missing
+            raise RuntimeError("python-docx is required to parse .docx files") from exc
+
+        document = DocxDocument(str(path))
+        return "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text)
+
+    raise ValueError(f"Unsupported file type: {path.suffix or 'unknown'}")
+
+
+def _load_documents_from_paths(file_paths: Iterable[str | Path]) -> list[Document]:
+    documents: list[Document] = []
+    for raw_path in file_paths:
+        path = Path(raw_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+
+        text = extract_text_from_file(path)
+        documents.append(
+            Document(
+                page_content=text,
+                metadata={
+                    "source": path.name,
+                    "file_path": str(path),
+                    "file_type": path.suffix.lower(),
+                },
+            )
+        )
+    return documents
+
+
+def ingest_documents(
+    pdf_dir: str | None = None,
+    files: Iterable[str | Path] | None = None,
+) -> int:
+    """Load documents, split into chunks, and upsert into Pinecone.
 
     Run this once (or whenever the document set changes).
     """
     _ensure_index_exists()
 
-    docs = PyPDFDirectoryLoader(pdf_dir).load()
+    if files is not None:
+        docs = _load_documents_from_paths(files)
+    else:
+        docs = PyPDFDirectoryLoader(pdf_dir or PDF_DIR).load()
+
     doc_splits = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
         chunk_size=512, chunk_overlap=64
     ).split_documents(docs)
@@ -70,6 +138,7 @@ def ingest_documents(pdf_dir: str = PDF_DIR) -> None:
         index_name=PINECONE_INDEX_NAME,
     )
     print(f"Ingested {len(doc_splits)} chunks into '{PINECONE_INDEX_NAME}'.")
+    return len(doc_splits)
 
 
 if __name__ == "__main__":
