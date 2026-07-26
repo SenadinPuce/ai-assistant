@@ -17,5 +17,5 @@ wheels/
 .pytest_cache/
 
 
-# Uploades files
+# Data files
 data/

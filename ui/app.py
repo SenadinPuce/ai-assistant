@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import requests
 import streamlit as st
@@ -7,6 +8,10 @@ from chat_store import ChatStore
 
 API_URL = "http://127.0.0.1:8000"
 DB_PATH = str(Path(__file__).parent.parent / "data" / "chats.db")
+API_TIMEOUT_SECONDS = 120
+UPLOAD_TIMEOUT_SECONDS = 300
+CHAT_HISTORY_WINDOW = 10
+SUPPORTED_UPLOAD_TYPES = ("txt", "pdf", "docx", "md", "csv", "json", "html", "htm")
 
 st.set_page_config(page_title="AI Assistant", page_icon="🤖", layout="wide")
 
@@ -54,6 +59,95 @@ def format_file_size(size_bytes: int) -> str:
         return f"{size_bytes / 1024:.1f} KB"
     return f"{size_bytes / (1024 * 1024):.1f} MB"
 
+
+def set_upload_result(success: bool, message: str) -> None:
+    """Store upload feedback to be shown after the next rerun."""
+    st.session_state.upload_result = {"success": success, "message": message}
+
+
+def validate_uploaded_files(uploaded_files: list[Any]) -> list[str]:
+    """Return validation errors for the current file selection."""
+    errors: list[str] = []
+
+    unsupported_files = [
+        file.name
+        for file in uploaded_files
+        if Path(file.name).suffix.lower().lstrip(".") not in SUPPORTED_UPLOAD_TYPES
+    ]
+    empty_files = [file.name for file in uploaded_files if file.size == 0]
+
+    if unsupported_files:
+        errors.append(
+            "Nepodržani tipovi fajlova: " + ", ".join(sorted(unsupported_files))
+        )
+    if empty_files:
+        errors.append("Prazni fajlovi ne mogu biti dodani: " + ", ".join(sorted(empty_files)))
+
+    return errors
+
+
+def format_request_error(exc: requests.exceptions.RequestException, fallback: str) -> str:
+    """Create a cleaner user-facing error message from a failed HTTP request."""
+    response = getattr(exc, "response", None)
+    if response is None:
+        return f"{fallback}: {exc}"
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    detail = payload.get("detail") if isinstance(payload, dict) else response.text.strip()
+    if detail:
+        return f"{fallback}: {detail}"
+
+    return f"{fallback}: HTTP {response.status_code}"
+
+
+def upload_documents(files_payload: list[tuple[str, tuple[str, bytes, str]]]) -> dict[str, Any]:
+    """Send the selected files to the upload endpoint."""
+    response = requests.post(
+        f"{API_URL}/documents/upload",
+        files=files_payload,
+        timeout=UPLOAD_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def ask_question(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+    """Send a chat request to the API."""
+    response = requests.post(
+        f"{API_URL}/chat",
+        json={"question": question, "history": history},
+        timeout=API_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def render_sources(sources: list[dict[str, Any]]) -> None:
+    """Render message sources consistently for stored and fresh responses."""
+    for src in sources:
+        if src.get("source"):
+            label = src["source"]
+            if src.get("page"):
+                label += f", str. {src['page']}"
+            st.markdown(f"- {label}")
+        elif src.get("url"):
+            st.markdown(f"- [{src['url']}]({src['url']})")
+
+
+def render_chat_message(message: dict[str, Any]) -> None:
+    """Render a stored chat message, including any assistant sources."""
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+        if message["role"] == "assistant" and message.get("sources"):
+            with st.expander("Izvori"):
+                render_sources(message["sources"])
+
+
 # ------------------------------------------------------------------
 # Sidebar
 # ------------------------------------------------------------------
@@ -61,7 +155,7 @@ def format_file_size(size_bytes: int) -> str:
 with st.sidebar:
     st.title("AI Assistant")
 
-    if st.button("+ Novi razgovor", use_container_width=True):
+    if st.button("Novi razgovor", icon=":material/add:", use_container_width=True):
         new_chat = store.create_chat()
         st.session_state.current_chat_id = new_chat["id"]
         st.session_state.renaming_chat_id = None
@@ -71,11 +165,12 @@ with st.sidebar:
     st.subheader("Dokumenti za bazu")
     uploaded_files = st.file_uploader(
         "Odaberi dokumente",
-        type=["txt", "pdf", "docx", "md", "csv", "json", "html", "htm"],
+        type=list(SUPPORTED_UPLOAD_TYPES),
         accept_multiple_files=True,
         disabled=st.session_state.upload_in_progress,
         key=f"document_upload_{st.session_state.upload_widget_key}",
     ) or []
+    upload_validation_errors = validate_uploaded_files(uploaded_files)
 
     file_count = len(uploaded_files)
     total_size = sum(uploaded_file.size for uploaded_file in uploaded_files)
@@ -84,6 +179,9 @@ with st.sidebar:
         st.caption(
             f"Spremno za dodavanje: {file_count} {file_label} ({format_file_size(total_size)})"
         )
+
+    for validation_error in upload_validation_errors:
+        st.warning(validation_error)
 
     upload_label = "Dodaj fajlove u bazu"
     if file_count == 1:
@@ -94,7 +192,11 @@ with st.sidebar:
     st.button(
         upload_label,
         use_container_width=True,
-        disabled=not file_count or st.session_state.upload_in_progress,
+        disabled=(
+            not file_count
+            or st.session_state.upload_in_progress
+            or bool(upload_validation_errors)
+        ),
         on_click=start_upload,
     )
 
@@ -111,38 +213,26 @@ with st.sidebar:
             ("files", (file.name, file.getvalue(), file.type or "application/octet-stream"))
             for file in uploaded_files
         ]
-        with st.status("Dodavanje dokumenata u bazu", expanded=True) as status:
-            try:
-                st.write(f"Obrađuje se {len(files_payload)} fajlova.")
-                with st.spinner("Fajlovi se šalju i indeksiraju..."):
-                    resp = requests.post(
-                        f"{API_URL}/documents/upload",
-                        files=files_payload,
-                        timeout=120,
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
+        st.info("Dodavanje dokumenata je u toku...")
+        try:
+            with st.spinner("Fajlovi se šalju i indeksiraju..."):
+                data = upload_documents(files_payload)
 
-                status.update(label="Dokumenti su uspješno dodati u bazu.", state="complete")
-                uploaded_file_count = len(data.get("files", []))
-                uploaded_file_label = "fajl" if uploaded_file_count == 1 else "fajla"
-                st.session_state.upload_result = {
-                    "success": True,
-                    "message": (
-                        f"Dodano {uploaded_file_count} {uploaded_file_label} i "
-                        f"{data.get('chunks', 0)} segmenata u bazu."
-                    ),
-                }
-                st.session_state.upload_widget_key += 1
-            except requests.exceptions.RequestException as exc:
-                status.update(label="Učitavanje dokumenata nije uspjelo.", state="error")
-                st.session_state.upload_result = {
-                    "success": False,
-                    "message": f"Neuspešan upload: {exc}",
-                }
-            finally:
-                st.session_state.upload_in_progress = False
-                st.rerun()
+            uploaded_file_count = len(data.get("files", []))
+            uploaded_file_label = "fajl" if uploaded_file_count == 1 else "fajla"
+            set_upload_result(
+                True,
+                (
+                    f"Dodano {uploaded_file_count} {uploaded_file_label} i "
+                    f"{data.get('chunks', 0)} segmenata u bazu."
+                ),
+            )
+            st.session_state.upload_widget_key += 1
+        except requests.exceptions.RequestException as exc:
+            set_upload_result(False, format_request_error(exc, "Neuspješan upload"))
+        finally:
+            st.session_state.upload_in_progress = False
+            st.rerun()
 
     st.divider()
 
@@ -187,7 +277,7 @@ with st.sidebar:
                     st.rerun()
 
         else:
-            label = f"**{chat['title']}**" if is_active else chat["title"]
+            label = f"• {chat['title']}" if is_active else chat["title"]
             col1, col2, col3 = st.columns([5, 1, 1])
             with col1:
                 if st.button(label, key=f"select_{chat_id}", use_container_width=True):
@@ -196,7 +286,7 @@ with st.sidebar:
                     st.session_state.deleting_chat_id = None
                     st.rerun()
             with col2:
-                if st.button("✏️", key=f"rename_{chat_id}",help="Rename this chat"):
+                if st.button("✏️", key=f"rename_{chat_id}", help="Rename this chat"):
                     st.session_state.renaming_chat_id = chat_id
                     st.session_state.deleting_chat_id = None
                     st.rerun()
@@ -222,32 +312,17 @@ if current_chat is None:
 st.header(current_chat["title"])
 
 messages = store.get_messages(st.session_state.current_chat_id)
+if not messages:
+    st.info("Postavite prvo pitanje ili dodajte dokumente iz bočne trake da proširite bazu znanja.")
+
 for msg in messages:
-    with st.chat_message(msg["role"]):
+    render_chat_message(msg)
 
-        st.markdown(msg["content"])
-
-        if msg["role"] == "assistant" and msg.get("sources"):
-
-            with st.expander("Izvori"):
-
-                for src in msg["sources"]:
-
-                    if src.get("source"):
-
-                        label = src["source"]
-
-                        if src.get("page"):
-                            label += f", str. {src['page']}"
-
-                        st.markdown(f"- {label}")
-
-                    elif src.get("url"):
-                        st.markdown(
-                            f"- {src['url']}"
-                        )
-
-if prompt := st.chat_input("Postavite pitanje…"):
+prompt = st.chat_input(
+    "Postavite pitanje…",
+    disabled=st.session_state.upload_in_progress,
+)
+if prompt:
     store.add_message(st.session_state.current_chat_id, "user", prompt)
 
     # Auto-title: replace default title with the first user message (truncated).
@@ -264,16 +339,10 @@ if prompt := st.chat_input("Postavite pitanje…"):
                 all_messages = store.get_messages(st.session_state.current_chat_id)
                 history = [
                     {"role": m["role"], "content": m["content"]}
-                    for m in all_messages[-11:-1]
+                    for m in all_messages[-(CHAT_HISTORY_WINDOW + 1):-1]
                 ]
 
-                resp = requests.post(
-                    f"{API_URL}/chat",
-                    json={"question": prompt, "history": history},
-                    timeout=120,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+                data = ask_question(prompt, history)
 
                 answer = data["answer"]
                 sources = data.get("sources", [])
@@ -282,19 +351,20 @@ if prompt := st.chat_input("Postavite pitanje…"):
 
                 if sources:
                     with st.expander("Izvori"):
-                        for src in sources:
-                            if src.get("source"):
-                                label = src["source"]
-                                if src.get("page"):
-                                    label += f", str. {src['page']}"
-                                st.markdown(f"- {label}")
-                            elif src.get("url"):
-                                st.markdown(f"- [{src['url']}]({src['url']})")
+                        render_sources(sources)
 
-              
-                store.add_message(st.session_state.current_chat_id, "assistant", answer, sources=sources)
+                store.add_message(
+                    st.session_state.current_chat_id,
+                    "assistant",
+                    answer,
+                    sources=sources,
+                )
 
             except requests.exceptions.ConnectionError:
                 st.error("Nije moguće povezati se sa API serverom.")
-            except requests.exceptions.HTTPError as e:
-                st.error(f"API greška: {e.response.status_code} — {e.response.text}")
+            except requests.exceptions.HTTPError as exc:
+                st.error(format_request_error(exc, "API greška"))
+            except requests.exceptions.RequestException as exc:
+                st.error(format_request_error(exc, "Zahtjev nije uspio"))
+            except Exception:
+                st.error("Došlo je do neočekivane greške tokom generisanja odgovora.")
