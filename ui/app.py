@@ -148,11 +148,50 @@ def render_chat_message(message: dict[str, Any]) -> None:
                 render_sources(message["sources"])
 
 
+def apply_sidebar_styles() -> None:
+    """Apply lightweight sidebar polish while keeping the default Streamlit layout."""
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1 {
+                letter-spacing: 0.2px;
+            }
+
+            [data-testid="stSidebar"] .stButton > button {
+                border-radius: 12px;
+                transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+            }
+
+            [data-testid="stSidebar"] .stButton > button:hover {
+                transform: translateY(-1px);
+                border-color: rgba(79, 70, 229, 0.75);
+                box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.25);
+            }
+
+            [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+                border: 1px solid rgba(79, 70, 229, 0.95);
+                box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.35);
+            }
+
+            [data-testid="stSidebar"] .stButton > button[kind="primary"] p {
+                font-weight: 600;
+            }
+
+            [data-testid="stSidebar"] .stTextInput > div > div > input {
+                border-radius: 10px;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # ------------------------------------------------------------------
 # Sidebar
 # ------------------------------------------------------------------
 
 with st.sidebar:
+    apply_sidebar_styles()
     st.title("AI Assistant")
 
     if st.button("Novi razgovor", icon=":material/add:", use_container_width=True):
@@ -277,10 +316,15 @@ with st.sidebar:
                     st.rerun()
 
         else:
-            label = f"• {chat['title']}" if is_active else chat["title"]
+            label = f"{chat['title']}" if is_active else chat["title"]
             col1, col2, col3 = st.columns([5, 1, 1])
             with col1:
-                if st.button(label, key=f"select_{chat_id}", use_container_width=True):
+                if st.button(
+                    label,
+                    key=f"select_{chat_id}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                ):
                     st.session_state.current_chat_id = chat_id
                     st.session_state.renaming_chat_id = None
                     st.session_state.deleting_chat_id = None
