@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -195,13 +196,20 @@ def render_sources(sources: list[dict[str, Any]]) -> None:
             st.markdown(f"> {src['snippet']}")
 
 
+def bold_citations(text: str) -> str:
+    """Bold inline [n] citation markers so they stand out from the answer body."""
+    return re.sub(r"\[(\d+)\]", r"**[\1]**", text)
+
+
 def render_chat_message(message: dict[str, Any]) -> None:
     """Render a stored chat message, including any assistant sources."""
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    avatar = ":material/person:" if message["role"] == "user" else ":material/smart_toy:"
+    with st.chat_message(message["role"], avatar=avatar):
+        content = bold_citations(message["content"]) if message["role"] == "assistant" else message["content"]
+        st.markdown(content)
 
         if message["role"] == "assistant" and message.get("sources"):
-            with st.expander("Izvori"):
+            with st.expander("📚 Izvori"):
                 render_sources(message["sources"])
 
 
@@ -228,14 +236,79 @@ def apply_sidebar_styles() -> None:
             [data-testid="stSidebar"] .stButton > button[kind="primary"] {
                 border: 1px solid rgba(79, 70, 229, 0.95);
                 box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.35);
+                background-color: rgba(79, 70, 229, 0.12);
             }
 
             [data-testid="stSidebar"] .stButton > button[kind="primary"] p {
                 font-weight: 600;
             }
 
+            [data-testid="stSidebar"] .stButton > button:disabled {
+                opacity: 0.55;
+            }
+
             [data-testid="stSidebar"] .stTextInput > div > div > input {
                 border-radius: 10px;
+            }
+
+            [data-testid="stSidebar"] hr {
+                margin: 0.9rem 0;
+            }
+
+            h2 {
+                border-bottom: 1px solid rgba(250, 250, 250, 0.12);
+                padding-bottom: 0.5rem;
+            }
+
+            .empty-state {
+                background-color: rgba(250, 250, 250, 0.05);
+                border: 1px solid rgba(250, 250, 250, 0.12);
+                border-radius: 12px;
+                padding: 1rem 1.25rem;
+                text-align: center;
+                color: rgba(250, 250, 250, 0.75);
+            }
+
+            [class*="st-key-doc_row_"] {
+                background-color: rgba(250, 250, 250, 0.04);
+                border-radius: 10px;
+                padding: 0.4rem 0.6rem;
+                margin-bottom: 0.35rem;
+            }
+
+            [class*="st-key-ghost_"] .stButton > button {
+                background-color: transparent !important;
+                border-color: transparent !important;
+                box-shadow: none !important;
+            }
+
+            [class*="st-key-ghost_"] .stButton > button:hover {
+                background-color: rgba(250, 250, 250, 0.08) !important;
+                border-color: rgba(250, 250, 250, 0.08) !important;
+                box-shadow: none !important;
+                transform: none !important;
+            }
+
+            [aria-label="Chat message from assistant"] {
+                background-color: rgba(250, 250, 250, 0.035);
+                border-radius: 12px;
+                padding: 0.85rem 1rem;
+            }
+
+            [data-testid="stChatMessage"]:has([aria-label="Chat message from assistant"])
+                [data-testid="stChatMessageAvatarCustom"] {
+                background-color: rgba(79, 70, 229, 0.85) !important;
+            }
+
+            [data-testid="stChatInput"] {
+                border-radius: 12px;
+                border: 1px solid rgba(250, 250, 250, 0.12);
+                transition: border-color 0.18s ease, box-shadow 0.18s ease;
+            }
+
+            [data-testid="stChatInput"]:focus-within {
+                border-color: rgba(79, 70, 229, 0.75);
+                box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.35);
             }
         </style>
         """,
@@ -264,7 +337,7 @@ with st.sidebar:
         st.session_state.deleting_chat_id = None
         st.rerun()
 
-    st.subheader("Dokumenti za bazu")
+    st.subheader("📄 Dokumenti za bazu")
     uploaded_files = st.file_uploader(
         "Odaberi dokumente",
         type=list(SUPPORTED_UPLOAD_TYPES),
@@ -337,7 +410,7 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.subheader("Dokumenti u bazi")
+    st.subheader("🗂️ Dokumenti u bazi")
 
     if "deleting_document_id" not in st.session_state:
         st.session_state.deleting_document_id = None
@@ -370,14 +443,23 @@ with st.sidebar:
                     st.session_state.deleting_document_id = None
                     st.rerun()
         else:
-            col1, col2 = st.columns([5, 1])
-            with col1:
-                chunk_label = "segment" if document["chunk_count"] == 1 else "segmenata"
-                st.caption(f"{document['original_filename']} · {document['chunk_count']} {chunk_label}")
-            with col2:
-                if st.button("🗑️", key=f"delete_doc_{document_id}", help="Ukloni ovaj dokument"):
-                    st.session_state.deleting_document_id = document_id
-                    st.rerun()
+            with st.container(key=f"doc_row_{document_id}"):
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    chunk_label = "segment" if document["chunk_count"] == 1 else "segmenata"
+                    st.caption(
+                        f"{document['original_filename']} · {document['chunk_count']} {chunk_label}"
+                    )
+                with col2:
+                    with st.container(key=f"ghost_delete_doc_{document_id}"):
+                        if st.button(
+                            "",
+                            key=f"delete_doc_{document_id}",
+                            help="Ukloni ovaj dokument",
+                            icon=":material/delete:",
+                        ):
+                            st.session_state.deleting_document_id = document_id
+                            st.rerun()
 
     st.divider()
 
@@ -435,15 +517,29 @@ with st.sidebar:
                     st.session_state.deleting_chat_id = None
                     st.rerun()
             with col2:
-                if st.button("✏️", key=f"rename_{chat_id}", help="Rename this chat", disabled=generating):
-                    st.session_state.renaming_chat_id = chat_id
-                    st.session_state.deleting_chat_id = None
-                    st.rerun()
+                with st.container(key=f"ghost_rename_{chat_id}"):
+                    if st.button(
+                        "",
+                        key=f"rename_{chat_id}",
+                        help="Rename this chat",
+                        disabled=generating,
+                        icon=":material/edit:",
+                    ):
+                        st.session_state.renaming_chat_id = chat_id
+                        st.session_state.deleting_chat_id = None
+                        st.rerun()
             with col3:
-                if st.button("🗑️", key=f"delete_{chat_id}", help="Delete this chat", disabled=generating):
-                    st.session_state.deleting_chat_id = chat_id
-                    st.session_state.renaming_chat_id = None
-                    st.rerun()
+                with st.container(key=f"ghost_delete_{chat_id}"):
+                    if st.button(
+                        "",
+                        key=f"delete_{chat_id}",
+                        help="Delete this chat",
+                        disabled=generating,
+                        icon=":material/delete:",
+                    ):
+                        st.session_state.deleting_chat_id = chat_id
+                        st.session_state.renaming_chat_id = None
+                        st.rerun()
 
 # ------------------------------------------------------------------
 # Main chat area
@@ -458,7 +554,7 @@ else:
         st.session_state.current_chat_id = None
         current_chat = {"id": None, "title": "Novi razgovor"}
 
-st.header(current_chat["title"])
+st.header(current_chat["title"], anchor=False)
 
 messages = (
     store.get_messages(st.session_state.current_chat_id)
@@ -466,7 +562,11 @@ messages = (
     else []
 )
 if not messages:
-    st.info("Postavite prvo pitanje ili dodajte dokumente iz bočne trake da proširite bazu znanja.")
+    st.markdown(
+        '<div class="empty-state">💬 Postavite prvo pitanje ili dodajte dokumente iz bočne trake da '
+        "proširite bazu znanja.</div>",
+        unsafe_allow_html=True,
+    )
 
 for msg in messages:
     render_chat_message(msg)
@@ -499,7 +599,7 @@ if st.session_state.pending_prompt:
     pending = st.session_state.pending_prompt
     pending_chat_id = st.session_state.pending_chat_id
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=":material/smart_toy:"):
         # st.status() always renders an empty bordered body even when collapsed
         # with no content, so use a plain placeholder for the progress label instead.
         status_placeholder = st.empty()
@@ -537,7 +637,7 @@ if st.session_state.pending_prompt:
             sources = sources_holder["sources"]
 
             if sources:
-                with st.expander("Izvori"):
+                with st.expander("📚 Izvori"):
                     render_sources(sources)
 
             store.add_message(
