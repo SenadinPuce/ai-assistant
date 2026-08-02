@@ -91,7 +91,10 @@ def extract_text_from_file(file_path: str | Path) -> str:
     raise ValueError(f"Unsupported file type: {path.suffix or 'unknown'}")
 
 
-def _load_documents_from_paths(file_paths: Iterable[str | Path]) -> list[Document]:
+def _load_documents_from_paths(
+    file_paths: Iterable[str | Path],
+    original_filenames: dict[str, str] | None = None,
+) -> list[Document]:
     documents: list[Document] = []
     for raw_path in file_paths:
         path = Path(raw_path)
@@ -106,6 +109,9 @@ def _load_documents_from_paths(file_paths: Iterable[str | Path]) -> list[Documen
                     "source": path.name,
                     "file_path": str(path),
                     "file_type": path.suffix.lower(),
+                    # The stored filename on disk has a hash suffix to avoid collisions;
+                    # keep the user-facing name around so citations can display it instead.
+                    "original_filename": (original_filenames or {}).get(str(path), path.name),
                 },
             )
         )
@@ -141,6 +147,7 @@ def _group_ids_by_source_file(
 def ingest_documents(
     pdf_dir: str | None = None,
     files: Iterable[str | Path] | None = None,
+    original_filenames: dict[str, str] | None = None,
 ) -> list[dict]:
     """Load documents, split into chunks, and upsert into Pinecone.
 
@@ -152,7 +159,7 @@ def ingest_documents(
     _ensure_index_exists()
 
     if files is not None:
-        docs = _load_documents_from_paths(files)
+        docs = _load_documents_from_paths(files, original_filenames)
     else:
         docs = PyPDFDirectoryLoader(pdf_dir or PDF_DIR).load()
 

@@ -74,12 +74,16 @@ def _extract_sources(documents: list[Document]) -> list[dict[str, Any]]:
         meta = doc.metadata or {}
         snippet = _make_snippet(doc.page_content)
 
-        if "page" in meta:
-            sources.append({
-                "source": _source_label(meta.get("source", "")),
-                "page": meta["page"] + 1,
+        # Ingested files always carry "file_type"; only true web-search results
+        # (rag/nodes/web_search.py) lack it and should render as a clickable link.
+        if "file_type" in meta:
+            source = {
+                "source": _source_label(meta.get("original_filename") or meta.get("source", "")),
                 "snippet": snippet,
-            })
+            }
+            if "page" in meta:
+                source["page"] = meta["page"] + 1
+            sources.append(source)
         else:
             sources.append({"url": meta.get("source", ""), "snippet": snippet})
 

@@ -1,12 +1,12 @@
 import asyncio
 import json
 import logging
+import tempfile
 import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -39,8 +39,6 @@ warnings.filterwarnings(
 )
 
 logger = logging.getLogger(__name__)
-UPLOAD_DIR = Path(__file__).resolve().parent.parent / "data" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 DOCUMENTS_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "documents.db"
 
 document_registry = DocumentRegistry(str(DOCUMENTS_DB_PATH))
@@ -176,9 +174,6 @@ async def delete_document(document_id: str):
     if document["vector_ids"]:
         await asyncio.to_thread(get_vectorstore().delete, ids=document["vector_ids"])
 
-    stored_path = UPLOAD_DIR / document["stored_filename"]
-    stored_path.unlink(missing_ok=True)
-
     document_registry.delete_document(document_id)
 
     return {"message": "Document deleted", "id": document_id}
@@ -186,44 +181,56 @@ async def delete_document(document_id: str):
 
 @app.post("/documents/upload")
 async def upload_documents(files: list[UploadFile] = File(...)):
-    """Save uploaded documents and ingest them into the internal knowledge base."""
+    """Ingest uploaded documents into the knowledge base.
+
+    Files are only written to a temporary directory for the duration of
+    ingestion — once chunked and upserted into Pinecone, the raw upload is no
+    longer needed, so nothing is kept in data/uploads.
+    """
     if not files:
         raise HTTPException(status_code=400, detail="No files were uploaded.")
 
-    saved_paths: list[Path] = []
-    original_filenames: dict[str, str] = {}
-    for upload in files:
-        if not upload.filename:
-            continue
+    with tempfile.TemporaryDirectory(prefix="upload_") as tmp_dir:
+        saved_paths: list[Path] = []
+        original_filenames: dict[str, str] = {}
+        for index, upload in enumerate(files):
+            if not upload.filename:
+                continue
 
-        suffix = Path(upload.filename).suffix.lower()
-        if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type: {suffix or 'unknown'}",
-            )
+            original_name = Path(upload.filename).name
+            suffix = Path(original_name).suffix.lower()
+            if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type: {suffix or 'unknown'}",
+                )
 
-        destination = UPLOAD_DIR / f"{Path(upload.filename).stem}-{uuid4().hex}{suffix}"
-        contents = await upload.read()
-        destination.write_bytes(contents)
-        saved_paths.append(destination)
-        original_filenames[str(destination)] = upload.filename
+            # A per-file subdirectory keeps duplicate filenames in one batch from colliding.
+            file_dir = Path(tmp_dir) / str(index)
+            file_dir.mkdir()
+            destination = file_dir / original_name
+            contents = await upload.read()
+            destination.write_bytes(contents)
+            saved_paths.append(destination)
+            original_filenames[str(destination)] = original_name
 
-    ingested = await asyncio.to_thread(ingest_documents, files=saved_paths)
-
-    for entry in ingested:
-        document_registry.add_document(
-            original_filename=original_filenames.get(entry["file_path"], entry["filename"]),
-            stored_filename=entry["filename"],
-            file_type=entry["file_type"],
-            chunk_count=entry["chunk_count"],
-            vector_ids=entry["vector_ids"],
+        ingested = await asyncio.to_thread(
+            ingest_documents, files=saved_paths, original_filenames=original_filenames
         )
 
-    chunk_count = sum(entry["chunk_count"] for entry in ingested)
+        for entry in ingested:
+            document_registry.add_document(
+                original_filename=original_filenames.get(entry["file_path"], entry["filename"]),
+                stored_filename=entry["filename"],
+                file_type=entry["file_type"],
+                chunk_count=entry["chunk_count"],
+                vector_ids=entry["vector_ids"],
+            )
 
-    return {
-        "message": "Documents ingested successfully",
-        "files": [path.name for path in saved_paths],
-        "chunks": chunk_count,
-    }
+        chunk_count = sum(entry["chunk_count"] for entry in ingested)
+
+        return {
+            "message": "Documents ingested successfully",
+            "files": [path.name for path in saved_paths],
+            "chunks": chunk_count,
+        }
