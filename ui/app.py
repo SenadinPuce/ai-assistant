@@ -46,6 +46,11 @@ if "upload_result" not in st.session_state:
 if "upload_widget_key" not in st.session_state:
     st.session_state.upload_widget_key = 0
 
+if "pending_prompt" not in st.session_state:
+    # Holds a submitted question while its answer is streaming, so a second
+    # submission can't interleave with it.
+    st.session_state.pending_prompt = None
+
 
 def start_upload() -> None:
     """Mark the selected documents for ingestion before Streamlit reruns."""
@@ -457,9 +462,9 @@ for msg in messages:
 
 prompt = st.chat_input(
     "Postavite pitanje…",
-    disabled=st.session_state.upload_in_progress,
+    disabled=st.session_state.upload_in_progress or st.session_state.pending_prompt is not None,
 )
-if prompt:
+if prompt and st.session_state.pending_prompt is None:
     if st.session_state.current_chat_id is None:
         # Persist the chat now that it actually has content.
         new_chat = store.create_chat()
@@ -473,8 +478,13 @@ if prompt:
         auto_title = prompt[:50].rstrip() + ("…" if len(prompt) > 50 else "")
         store.rename_chat(st.session_state.current_chat_id, auto_title)
 
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    # Rerun immediately: the message loop above will render the just-saved
+    # user message, and the input stays disabled while the answer streams.
+    st.session_state.pending_prompt = prompt
+    st.rerun()
+
+if st.session_state.pending_prompt:
+    pending = st.session_state.pending_prompt
 
     with st.chat_message("assistant"):
         # st.status() always renders an empty bordered body even when collapsed
@@ -486,7 +496,7 @@ if prompt:
         def _stream_answer() -> Iterator[str]:
             """Update the live status per CRAG stage while yielding answer tokens."""
             reached_tokens = False
-            for event_type, payload in stream_chat_events(prompt, history):
+            for event_type, payload in stream_chat_events(pending, history):
                 if event_type == "stage" and payload.get("status") == "started":
                     status_placeholder.markdown(f"⏳ {payload['label']}")
                 elif event_type == "token":
@@ -535,5 +545,6 @@ if prompt:
         except Exception:
             st.error("Došlo je do neočekivane greške tokom generisanja odgovora.")
 
+    st.session_state.pending_prompt = None
     # Refresh so the sidebar shows the (possibly new/renamed) chat and updated header.
     st.rerun()
