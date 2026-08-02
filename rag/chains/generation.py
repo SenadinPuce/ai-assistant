@@ -17,6 +17,10 @@ _prompt = ChatPromptTemplate.from_messages(
                 "Use the retrieved context to answer the question. "
                 "If you don't know the answer, say that you don't know. "
                 "Keep the answer concise — three sentences maximum. "
+                "The context is split into numbered blocks like [1], [2], etc. "
+                "Cite the block(s) supporting each claim inline using the same "
+                "bracketed numbers (e.g. 'Prodaja je rasla [1].'). Do not cite "
+                "if the context has no numbered blocks. "
                 "You MUST respond in {language}. Do not use any other language."
             ),
         ),

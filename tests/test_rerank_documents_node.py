@@ -1,7 +1,10 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from dotenv import load_dotenv
 from langchain_core.documents import Document
+
+load_dotenv()
 
 from rag.nodes.rerank_documents import rerank_documents_node
 from rag.state import GraphState

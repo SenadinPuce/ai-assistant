@@ -3,6 +3,7 @@ from typing import Any
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 
 from rag.chains.generation import generation_chain
 from rag.language import detect_language
@@ -10,10 +11,48 @@ from rag.state import GraphState
 
 logger = logging.getLogger(__name__)
 
+_SNIPPET_MAX_LENGTH = 280
+
+
+def _document_key(doc: Document) -> tuple | None:
+    """Return the dedup/citation key for a document (source+page, or url)."""
+    meta = doc.metadata or {}
+    source = meta.get("source", "")
+
+    if "page" in meta:
+        return (source, meta["page"])
+    if source:
+        return (source,)
+    return None
+
+
+def _make_snippet(text: str, max_length: int = _SNIPPET_MAX_LENGTH) -> str:
+    """Collapse whitespace and trim a chunk's text to a short citation excerpt."""
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= max_length:
+        return cleaned
+    return cleaned[:max_length].rstrip() + "…"
+
 
 def _format_context(documents: list[Document]) -> str:
-    """Join document page content into a single context string for the prompt."""
-    return "\n\n".join(doc.page_content for doc in documents)
+    """Join document page content into blocks numbered to match citation markers."""
+    if not documents:
+        return ""
+
+    numbers: dict[tuple, int] = {}
+    blocks: list[str] = []
+
+    for doc in documents:
+        key = _document_key(doc)
+        if key is None:
+            blocks.append(doc.page_content)
+            continue
+
+        if key not in numbers:
+            numbers[key] = len(numbers) + 1
+        blocks.append(f"[{numbers[key]}] {doc.page_content}")
+
+    return "\n\n".join(blocks)
 
 
 def _source_label(path: str) -> str:
@@ -22,34 +61,32 @@ def _source_label(path: str) -> str:
 
 
 def _extract_sources(documents: list[Document]) -> list[dict[str, Any]]:
-    """Build a deduplicated list of source references from document metadata."""
+    """Build a deduplicated list of source references, numbered to match citation markers."""
     seen: set[tuple] = set()
     sources: list[dict[str, Any]] = []
 
     for doc in documents:
+        key = _document_key(doc)
+        if key is None or key in seen:
+            continue
+        seen.add(key)
+
         meta = doc.metadata or {}
-        source = meta.get("source", "")
+        snippet = _make_snippet(doc.page_content)
 
         if "page" in meta:
-            key = (source, meta["page"])
-            if key in seen:
-                continue
-            seen.add(key)
             sources.append({
-                "source": _source_label(source),
+                "source": _source_label(meta.get("source", "")),
                 "page": meta["page"] + 1,
+                "snippet": snippet,
             })
-        elif source:
-            key = (source,)
-            if key in seen:
-                continue
-            seen.add(key)
-            sources.append({"url": source})
+        else:
+            sources.append({"url": meta.get("source", ""), "snippet": snippet})
 
     return sources
 
 
-def generate_answer_node(state: GraphState) -> GraphState:
+def generate_answer_node(state: GraphState, config: RunnableConfig) -> GraphState:
     """Generate an answer to the question based on retrieved documents."""
     question = state.get("original_question") or state["question"]
     logger.info("Generating answer for question: %s", question)
@@ -62,12 +99,19 @@ def generate_answer_node(state: GraphState) -> GraphState:
         for m in state.get("chat_history") or []
     ]
 
-    generation = generation_chain.invoke({
-        "question": question,
-        "context": context,
-        "language": language,
-        "chat_history": chat_history,
-    })
+    # Stream (rather than invoke) so token deltas surface through astream_events.
+    generation = "".join(
+        generation_chain.stream(
+            {
+                "question": question,
+                "context": context,
+                "language": language,
+                "chat_history": chat_history,
+            },
+            config=config,
+        )
+    )
     sources = _extract_sources(state["documents"])
 
     return {"generation": generation, "sources": sources}
+
