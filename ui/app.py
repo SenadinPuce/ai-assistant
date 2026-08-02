@@ -520,5 +520,7 @@ if prompt:
             st.error(format_request_error(exc, "API greška"))
         except requests.exceptions.RequestException as exc:
             st.error(format_request_error(exc, "Zahtjev nije uspio"))
+        except RuntimeError as exc:
+            st.error(str(exc))
         except Exception:
             st.error("Došlo je do neočekivane greške tokom generisanja odgovora.")

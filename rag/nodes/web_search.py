@@ -23,6 +23,11 @@ def web_search_node(state: GraphState) -> GraphState:
     existing_docs = state.get("documents") or []
 
     search_results = _web_search_tool.invoke({"query": question})
+    if "error" in search_results:
+        # TavilySearch swallows API/network failures into this key instead of raising.
+        logger.error("Tavily web search failed: %s", search_results["error"])
+        return {"documents": existing_docs, "web_search": False}
+
     new_docs = [
         Document(
             page_content=result["content"], metadata={"source": result.get("url", "")}
