@@ -6,7 +6,6 @@ from typing import Iterable
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_core.documents import Document
-from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone, ServerlessSpec
 
@@ -17,7 +16,7 @@ from retrieval.config import (
     PDF_DIR,
     PINECONE_INDEX_NAME,
 )
-from retrieval.vectorstore import _get_embeddings
+from retrieval.vectorstore import get_vectorstore
 
 SUPPORTED_UPLOAD_EXTENSIONS = {
     ".txt",
@@ -113,11 +112,40 @@ def _load_documents_from_paths(file_paths: Iterable[str | Path]) -> list[Documen
     return documents
 
 
+def _group_ids_by_source_file(
+    doc_splits: list[Document], vector_ids: list[str]
+) -> list[dict]:
+    """Group upserted vector IDs by their originating file for registry tracking."""
+    grouped: dict[str, dict] = {}
+
+    for doc, vector_id in zip(doc_splits, vector_ids):
+        meta = doc.metadata or {}
+        key = meta.get("file_path") or meta.get("source") or "unknown"
+
+        entry = grouped.setdefault(
+            key,
+            {
+                "file_path": key,
+                "filename": Path(key).name if key != "unknown" else "unknown",
+                "file_type": Path(key).suffix.lower(),
+                "chunk_count": 0,
+                "vector_ids": [],
+            },
+        )
+        entry["chunk_count"] += 1
+        entry["vector_ids"].append(vector_id)
+
+    return list(grouped.values())
+
+
 def ingest_documents(
     pdf_dir: str | None = None,
     files: Iterable[str | Path] | None = None,
-) -> int:
+) -> list[dict]:
     """Load documents, split into chunks, and upsert into Pinecone.
+
+    Returns a per-source-file breakdown (filename, chunk count, vector IDs)
+    so callers can track what was ingested (e.g. for later deletion).
 
     Run this once (or whenever the document set changes).
     """
@@ -132,13 +160,9 @@ def ingest_documents(
         chunk_size=512, chunk_overlap=64
     ).split_documents(docs)
 
-    PineconeVectorStore.from_documents(
-        documents=doc_splits,
-        embedding=_get_embeddings(),
-        index_name=PINECONE_INDEX_NAME,
-    )
+    vector_ids = get_vectorstore().add_documents(doc_splits)
     print(f"Ingested {len(doc_splits)} chunks into '{PINECONE_INDEX_NAME}'.")
-    return len(doc_splits)
+    return _group_ids_by_source_file(doc_splits, vector_ids)
 
 
 if __name__ == "__main__":
