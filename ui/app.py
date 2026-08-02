@@ -1,3 +1,5 @@
+import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -115,27 +117,74 @@ def upload_documents(files_payload: list[tuple[str, tuple[str, bytes, str]]]) ->
     return response.json()
 
 
-def ask_question(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
-    """Send a chat request to the API."""
+def _parse_sse_stream(response: requests.Response) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Parse a text/event-stream response body into (event_type, payload) tuples."""
+    event_type = "message"
+    data_lines: list[str] = []
+
+    for raw_line in response.iter_lines(decode_unicode=True):
+        line = (raw_line or "").rstrip("\r")
+
+        if line == "":
+            if data_lines:
+                yield event_type, json.loads("\n".join(data_lines))
+            event_type, data_lines = "message", []
+            continue
+
+        if line.startswith("event:"):
+            event_type = line[len("event:"):].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:"):].strip())
+
+    if data_lines:
+        yield event_type, json.loads("\n".join(data_lines))
+
+
+def stream_chat_events(
+    question: str, history: list[dict[str, str]]
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Send a chat request to the API and yield parsed SSE (event_type, payload) tuples."""
     response = requests.post(
         f"{API_URL}/chat",
         json={"question": question, "history": history},
         timeout=API_TIMEOUT_SECONDS,
+        stream=True,
     )
     response.raise_for_status()
-    return response.json()
+    try:
+        yield from _parse_sse_stream(response)
+    finally:
+        response.close()
+
+
+def list_documents() -> list[dict[str, Any]]:
+    """Fetch documents currently ingested into the knowledge base."""
+    response = requests.get(f"{API_URL}/documents", timeout=API_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    return response.json().get("documents", [])
+
+
+def delete_document(document_id: str) -> None:
+    """Remove a document and its chunks from the knowledge base."""
+    response = requests.delete(f"{API_URL}/documents/{document_id}", timeout=API_TIMEOUT_SECONDS)
+    response.raise_for_status()
 
 
 def render_sources(sources: list[dict[str, Any]]) -> None:
-    """Render message sources consistently for stored and fresh responses."""
-    for src in sources:
+    """Render numbered sources (matching inline [n] citations) with an excerpt each."""
+    for idx, src in enumerate(sources, start=1):
         if src.get("source"):
-            label = src["source"]
+            label = f"**[{idx}] {src['source']}**"
             if src.get("page"):
                 label += f", str. {src['page']}"
-            st.markdown(f"- {label}")
         elif src.get("url"):
-            st.markdown(f"- [{src['url']}]({src['url']})")
+            label = f"**[{idx}]** [{src['url']}]({src['url']})"
+        else:
+            continue
+
+        st.markdown(label)
+        if src.get("snippet"):
+            st.markdown(f"> {src['snippet']}")
 
 
 def render_chat_message(message: dict[str, Any]) -> None:
@@ -274,6 +323,49 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
+    st.subheader("Dokumenti u bazi")
+
+    if "deleting_document_id" not in st.session_state:
+        st.session_state.deleting_document_id = None
+
+    try:
+        ingested_documents = list_documents()
+    except requests.exceptions.RequestException:
+        ingested_documents = []
+        st.caption("Nije moguće učitati listu dokumenata.")
+
+    if not ingested_documents:
+        st.caption("Baza znanja je trenutno prazna.")
+
+    for document in ingested_documents:
+        document_id = document["id"]
+
+        if st.session_state.deleting_document_id == document_id:
+            st.warning(f'Ukloniti "{document["original_filename"]}" iz baze?')
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Da", key=f"confirm_delete_doc_{document_id}", use_container_width=True):
+                    try:
+                        delete_document(document_id)
+                    except requests.exceptions.RequestException as exc:
+                        st.error(format_request_error(exc, "Brisanje nije uspjelo"))
+                    st.session_state.deleting_document_id = None
+                    st.rerun()
+            with col2:
+                if st.button("Ne", key=f"cancel_delete_doc_{document_id}", use_container_width=True):
+                    st.session_state.deleting_document_id = None
+                    st.rerun()
+        else:
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                chunk_label = "segment" if document["chunk_count"] == 1 else "segmenata"
+                st.caption(f"{document['original_filename']} · {document['chunk_count']} {chunk_label}")
+            with col2:
+                if st.button("🗑️", key=f"delete_doc_{document_id}", help="Ukloni ovaj dokument"):
+                    st.session_state.deleting_document_id = document_id
+                    st.rerun()
+
+    st.divider()
 
     for chat in store.list_chats():
         chat_id = chat["id"]
@@ -378,37 +470,55 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Generiše se odgovor…"):
-            try:
-                all_messages = store.get_messages(st.session_state.current_chat_id)
-                history = [
-                    {"role": m["role"], "content": m["content"]}
-                    for m in all_messages[-(CHAT_HISTORY_WINDOW + 1):-1]
-                ]
+        status = st.status("Obrađujem pitanje…", expanded=True)
+        sources_holder: dict[str, list] = {"sources": []}
 
-                data = ask_question(prompt, history)
+        def _stream_answer() -> Iterator[str]:
+            """Update the live status per CRAG stage while yielding answer tokens."""
+            reached_tokens = False
+            for event_type, payload in stream_chat_events(prompt, history):
+                if event_type == "stage" and payload.get("status") == "started":
+                    status.update(label=payload["label"], state="running")
+                elif event_type == "token":
+                    if not reached_tokens:
+                        status.update(label="Odgovor je spreman.", state="complete", expanded=False)
+                        reached_tokens = True
+                    yield payload["text"]
+                elif event_type == "sources":
+                    sources_holder["sources"] = payload.get("sources", [])
+                elif event_type == "error":
+                    status.update(label="Greška prilikom generisanja odgovora.", state="error")
+                    raise RuntimeError(payload.get("message", "Nepoznata greška"))
 
-                answer = data["answer"]
-                sources = data.get("sources", [])
+            if not reached_tokens:
+                status.update(label="Odgovor je spreman.", state="complete", expanded=False)
 
-                st.markdown(answer)
+        try:
+            all_messages = store.get_messages(st.session_state.current_chat_id)
+            history = [
+                {"role": m["role"], "content": m["content"]}
+                for m in all_messages[-(CHAT_HISTORY_WINDOW + 1):-1]
+            ]
 
-                if sources:
-                    with st.expander("Izvori"):
-                        render_sources(sources)
+            answer = st.write_stream(_stream_answer())
+            sources = sources_holder["sources"]
 
-                store.add_message(
-                    st.session_state.current_chat_id,
-                    "assistant",
-                    answer,
-                    sources=sources,
-                )
+            if sources:
+                with st.expander("Izvori"):
+                    render_sources(sources)
 
-            except requests.exceptions.ConnectionError:
-                st.error("Nije moguće povezati se sa API serverom.")
-            except requests.exceptions.HTTPError as exc:
-                st.error(format_request_error(exc, "API greška"))
-            except requests.exceptions.RequestException as exc:
-                st.error(format_request_error(exc, "Zahtjev nije uspio"))
-            except Exception:
-                st.error("Došlo je do neočekivane greške tokom generisanja odgovora.")
+            store.add_message(
+                st.session_state.current_chat_id,
+                "assistant",
+                answer,
+                sources=sources,
+            )
+
+        except requests.exceptions.ConnectionError:
+            st.error("Nije moguće povezati se sa API serverom.")
+        except requests.exceptions.HTTPError as exc:
+            st.error(format_request_error(exc, "API greška"))
+        except requests.exceptions.RequestException as exc:
+            st.error(format_request_error(exc, "Zahtjev nije uspio"))
+        except Exception:
+            st.error("Došlo je do neočekivane greške tokom generisanja odgovora.")
