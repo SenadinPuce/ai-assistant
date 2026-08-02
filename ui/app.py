@@ -470,7 +470,10 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        status = st.status("Obrađujem pitanje…", expanded=True)
+        # st.status() always renders an empty bordered body even when collapsed
+        # with no content, so use a plain placeholder for the progress label instead.
+        status_placeholder = st.empty()
+        status_placeholder.markdown("⏳ Obrađujem pitanje…")
         sources_holder: dict[str, list] = {"sources": []}
 
         def _stream_answer() -> Iterator[str]:
@@ -478,20 +481,20 @@ if prompt:
             reached_tokens = False
             for event_type, payload in stream_chat_events(prompt, history):
                 if event_type == "stage" and payload.get("status") == "started":
-                    status.update(label=payload["label"], state="running")
+                    status_placeholder.markdown(f"⏳ {payload['label']}")
                 elif event_type == "token":
                     if not reached_tokens:
-                        status.update(label="Odgovor je spreman.", state="complete", expanded=False)
+                        status_placeholder.empty()
                         reached_tokens = True
                     yield payload["text"]
                 elif event_type == "sources":
                     sources_holder["sources"] = payload.get("sources", [])
                 elif event_type == "error":
-                    status.update(label="Greška prilikom generisanja odgovora.", state="error")
+                    status_placeholder.markdown("⚠️ Greška prilikom generisanja odgovora.")
                     raise RuntimeError(payload.get("message", "Nepoznata greška"))
 
             if not reached_tokens:
-                status.update(label="Odgovor je spreman.", state="complete", expanded=False)
+                status_placeholder.empty()
 
         try:
             all_messages = store.get_messages(st.session_state.current_chat_id)
