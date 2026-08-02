@@ -21,6 +21,7 @@ class SourceReference(BaseModel):
     source: str | None = None
     page: int | None = None
     url: str | None = None
+    snippet: str | None = None
 
 
 class AnswerResponse(BaseModel):

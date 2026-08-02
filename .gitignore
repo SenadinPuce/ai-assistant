@@ -19,3 +19,9 @@ wheels/
 
 # Data files
 data/
+
+# GitHub Copilot instructions
+.github/copilot-instructions.md
+
+# Project specific files
+docs/zavrsni_rad.txt
