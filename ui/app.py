@@ -28,9 +28,8 @@ store: ChatStore = st.session_state.store
 
 if "current_chat_id" not in st.session_state:
     chats = store.list_chats()
-    if not chats:
-        chats = [store.create_chat()]
-    st.session_state.current_chat_id = chats[0]["id"]
+    # None means "new, unsaved chat" — it's only persisted once the first message is sent.
+    st.session_state.current_chat_id = chats[0]["id"] if chats else None
 
 if "renaming_chat_id" not in st.session_state:
     st.session_state.renaming_chat_id = None
@@ -244,8 +243,8 @@ with st.sidebar:
     st.title("AI Assistant")
 
     if st.button("Novi razgovor", icon=":material/add:", use_container_width=True):
-        new_chat = store.create_chat()
-        st.session_state.current_chat_id = new_chat["id"]
+        # Don't persist yet — the chat is only saved once the user sends a message.
+        st.session_state.current_chat_id = None
         st.session_state.renaming_chat_id = None
         st.session_state.deleting_chat_id = None
         st.rerun()
@@ -398,9 +397,7 @@ with st.sidebar:
                     store.delete_chat(chat_id)
                     st.session_state.deleting_chat_id = None
                     remaining = store.list_chats()
-                    if not remaining:
-                        remaining = [store.create_chat()]
-                    st.session_state.current_chat_id = remaining[0]["id"]
+                    st.session_state.current_chat_id = remaining[0]["id"] if remaining else None
                     st.rerun()
             with col2:
                 if st.button("Ne", key=f"cancel_delete_{chat_id}", use_container_width=True):
@@ -436,18 +433,22 @@ with st.sidebar:
 # Main chat area
 # ------------------------------------------------------------------
 
-current_chat = store.get_chat(st.session_state.current_chat_id)
-if current_chat is None:
-    # The chat was deleted mid-session; fall back to the first available one.
-    chats = store.list_chats()
-    if not chats:
-        chats = [store.create_chat()]
-    st.session_state.current_chat_id = chats[0]["id"]
-    current_chat = chats[0]
+if st.session_state.current_chat_id is None:
+    current_chat = {"id": None, "title": "Novi razgovor"}
+else:
+    current_chat = store.get_chat(st.session_state.current_chat_id)
+    if current_chat is None:
+        # The chat was deleted mid-session; fall back to a fresh, unsaved chat.
+        st.session_state.current_chat_id = None
+        current_chat = {"id": None, "title": "Novi razgovor"}
 
 st.header(current_chat["title"])
 
-messages = store.get_messages(st.session_state.current_chat_id)
+messages = (
+    store.get_messages(st.session_state.current_chat_id)
+    if st.session_state.current_chat_id is not None
+    else []
+)
 if not messages:
     st.info("Postavite prvo pitanje ili dodajte dokumente iz bočne trake da proširite bazu znanja.")
 
@@ -459,6 +460,12 @@ prompt = st.chat_input(
     disabled=st.session_state.upload_in_progress,
 )
 if prompt:
+    if st.session_state.current_chat_id is None:
+        # Persist the chat now that it actually has content.
+        new_chat = store.create_chat()
+        st.session_state.current_chat_id = new_chat["id"]
+        current_chat = new_chat
+
     store.add_message(st.session_state.current_chat_id, "user", prompt)
 
     # Auto-title: replace default title with the first user message (truncated).
@@ -527,3 +534,6 @@ if prompt:
             st.error(str(exc))
         except Exception:
             st.error("Došlo je do neočekivane greške tokom generisanja odgovora.")
+
+    # Refresh so the sidebar shows the (possibly new/renamed) chat and updated header.
+    st.rerun()
