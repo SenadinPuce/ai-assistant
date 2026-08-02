@@ -51,6 +51,10 @@ if "pending_prompt" not in st.session_state:
     # submission can't interleave with it.
     st.session_state.pending_prompt = None
 
+if "pending_chat_id" not in st.session_state:
+    # The chat the pending answer belongs to, fixed regardless of chat switches.
+    st.session_state.pending_chat_id = None
+
 
 def start_upload() -> None:
     """Mark the selected documents for ingestion before Streamlit reruns."""
@@ -247,7 +251,13 @@ with st.sidebar:
     apply_sidebar_styles()
     st.title("AI Assistant")
 
-    if st.button("Novi razgovor", icon=":material/add:", use_container_width=True):
+    # Lock chat navigation while an answer streams so it can't be redirected
+    # to a different chat mid-generation.
+    generating = st.session_state.pending_prompt is not None
+
+    if st.button(
+        "Novi razgovor", icon=":material/add:", use_container_width=True, disabled=generating
+    ):
         # Don't persist yet — the chat is only saved once the user sends a message.
         st.session_state.current_chat_id = None
         st.session_state.renaming_chat_id = None
@@ -418,18 +428,19 @@ with st.sidebar:
                     key=f"select_{chat_id}",
                     use_container_width=True,
                     type="primary" if is_active else "secondary",
+                    disabled=generating,
                 ):
                     st.session_state.current_chat_id = chat_id
                     st.session_state.renaming_chat_id = None
                     st.session_state.deleting_chat_id = None
                     st.rerun()
             with col2:
-                if st.button("✏️", key=f"rename_{chat_id}", help="Rename this chat"):
+                if st.button("✏️", key=f"rename_{chat_id}", help="Rename this chat", disabled=generating):
                     st.session_state.renaming_chat_id = chat_id
                     st.session_state.deleting_chat_id = None
                     st.rerun()
             with col3:
-                if st.button("🗑️", key=f"delete_{chat_id}", help="Delete this chat"):
+                if st.button("🗑️", key=f"delete_{chat_id}", help="Delete this chat", disabled=generating):
                     st.session_state.deleting_chat_id = chat_id
                     st.session_state.renaming_chat_id = None
                     st.rerun()
@@ -481,10 +492,12 @@ if prompt and st.session_state.pending_prompt is None:
     # Rerun immediately: the message loop above will render the just-saved
     # user message, and the input stays disabled while the answer streams.
     st.session_state.pending_prompt = prompt
+    st.session_state.pending_chat_id = st.session_state.current_chat_id
     st.rerun()
 
 if st.session_state.pending_prompt:
     pending = st.session_state.pending_prompt
+    pending_chat_id = st.session_state.pending_chat_id
 
     with st.chat_message("assistant"):
         # st.status() always renders an empty bordered body even when collapsed
@@ -514,7 +527,7 @@ if st.session_state.pending_prompt:
                 status_placeholder.empty()
 
         try:
-            all_messages = store.get_messages(st.session_state.current_chat_id)
+            all_messages = store.get_messages(pending_chat_id)
             history = [
                 {"role": m["role"], "content": m["content"]}
                 for m in all_messages[-(CHAT_HISTORY_WINDOW + 1):-1]
@@ -528,7 +541,7 @@ if st.session_state.pending_prompt:
                     render_sources(sources)
 
             store.add_message(
-                st.session_state.current_chat_id,
+                pending_chat_id,
                 "assistant",
                 answer,
                 sources=sources,
@@ -546,5 +559,6 @@ if st.session_state.pending_prompt:
             st.error("Došlo je do neočekivane greške tokom generisanja odgovora.")
 
     st.session_state.pending_prompt = None
+    st.session_state.pending_chat_id = None
     # Refresh so the sidebar shows the (possibly new/renamed) chat and updated header.
     st.rerun()
