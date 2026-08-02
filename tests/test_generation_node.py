@@ -45,7 +45,12 @@ def test_format_context_numbers_blocks_by_source() -> None:
 
 def test_extract_sources_includes_snippet() -> None:
     """_extract_sources includes a trimmed excerpt of the chunk's text."""
-    docs = [Document(page_content="Poslovni sistem je skup podsistema.", metadata={"source": "a.pdf", "page": 0})]
+    docs = [
+        Document(
+            page_content="Poslovni sistem je skup podsistema.",
+            metadata={"source": "a.pdf", "page": 0, "file_type": ".pdf"},
+        )
+    ]
     sources = _extract_sources(docs)
     assert sources == [{"source": "a.pdf", "page": 1, "snippet": "Poslovni sistem je skup podsistema."}]
 
