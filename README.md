@@ -52,6 +52,15 @@ uv run streamlit run ui/app.py
 API po defaultu sluša na `http://127.0.0.1:8000`, a Streamlit UI se automatski povezuje na tu adresu
 (`API_URL` u [ui/app.py](ui/app.py)).
 
+## Lokalno stanje i podaci
+
+Prilikom prvog pokretanja aplikacija automatski kreira lokalne SQLite baze u [data/](data/):
+- [data/documents.db](data/documents.db) — metapodaci o ingestovanim dokumentima i njihovim Pinecone vector ID-jevima
+- [data/chats.db](data/chats.db) — historija razgovora u Streamlit UI-ju
+
+Raw upload fajlovi se ne čuvaju dugo nakon ingestovanja; tokom obrade postoje samo privremeno na disku,
+dok odgovori i dokumenti ostaju dostupni kroz Pinecone i lokalne baze.
+
 ## Testiranje
 
 ```powershell

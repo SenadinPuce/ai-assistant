@@ -25,6 +25,7 @@ Pokreće CRAG tok rada za jedno pitanje i vraća `text/event-stream` (Server-Sen
   ]
 }
 ```
+`history` je opcionalno polje; ako se ne pošalje, API koristi praznu historiju razgovora.
 
 **SSE eventi** (u redoslijedu pojavljivanja):
 
@@ -46,8 +47,9 @@ Vraća listu dokumenata trenutno ingestovanih u bazu znanja.
     {
       "id": "uuid",
       "original_filename": "primjer.pdf",
+      "file_type": ".pdf",
       "chunk_count": 12,
-      "created_at": "..."
+      "uploaded_at": "..."
     }
   ]
 }

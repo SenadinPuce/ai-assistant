@@ -52,6 +52,15 @@ Definisano u [rag/state.py](../rag/state.py) kao `TypedDict` koje teče kroz sve
 | `sources` | Deduplicirane reference izvora izvučene iz dokumenata |
 | `chat_history` | Prethodni koraci razgovora radi konteksta u više koraka |
 
+
+## Lokalno stanje i baze
+
+Aplikacija koristi dva lokalna SQLite skladišta:
+- [api/document_registry.py](../api/document_registry.py) — bilježi metapodatke o ingestovanim dokumentima, uključujući broj chunk-ova i Pinecone vector ID-jeve, kako bi se dokumenti mogli kasnije ukloniti u potpunosti.
+- [ui/chat_store.py](../ui/chat_store.py) — čuva razgovore i poruke u lokalnoj bazi za Streamlit interfejs.
+
+Datoteke u [data/](../data/) se automatski kreiraju pri prvom pokretanju. Raw upload fajlovi nisu trajno pohranjeni: nakon ingestovanja ostaju samo privremeno na disku dok se tekst ne ekstrahuje i ne upiše u vektorsku bazu.
+
 ## Direktoriji
 
 - `api/` — FastAPI REST sloj (SSE streaming `/chat`, CRUD za `/documents`).

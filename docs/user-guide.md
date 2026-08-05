@@ -39,3 +39,5 @@ Kratak vodič za korištenje Streamlit korisničkog sučelja ([ui/app.py](../ui/
   razgovora su privremeno onemogućeni kako bi se izbjegli konflikti.
 - Historija razgovora se lokalno čuva u SQLite bazi (`data/chats.db`) i preživljava restart
   aplikacije.
+- Informacije o ingestovanim dokumentima (uključujući broj chunk-ova i        Pinecone vector ID-jeve)
+se čuvaju u `data/documents.db`; raw upload fajlovi se ne čuvaju trajno nakon obrade.
