@@ -3,7 +3,7 @@ import os
 # ---------------------------------------------------------------------------
 # Pinecone / embedding settings
 # ---------------------------------------------------------------------------
-PINECONE_INDEX_NAME = os.environ["PINECONE_INDEX_NAME"]
+PINECONE_INDEX_NAME = os.environ["PINECONE_INDEX_NAME"].strip()
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSIONS = 1536
 
