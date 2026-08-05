@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from langchain_core.documents import Document
 
 load_dotenv()
 
@@ -25,6 +26,7 @@ from rag.constants import (
     WEB_SEARCH,
 )
 from rag.language import _get_detector
+from rag.reranker import rerank
 from rag.reranker import _get_reranker
 from retrieval.vectorstore import get_vectorstore
 
@@ -61,6 +63,10 @@ async def lifespan(app: FastAPI):
     logger.info("Loading models...")
     _get_reranker()
     _get_detector()
+
+    # Warm one tiny cross-encoder pass so first retrieval question does not
+    # pay model/tokenizer initial inference overhead.
+    rerank("warmup", [Document(page_content="warmup", metadata={"source": "warmup"})])
 
     from rag.graph import app as rag_app
 

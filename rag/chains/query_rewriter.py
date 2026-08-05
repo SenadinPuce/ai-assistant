@@ -18,6 +18,10 @@ _prompt = ChatPromptTemplate.from_messages(
                 "'that', 'it', 'this topic' with the actual subject). "
                 "Rewrite the question to be more specific, self-contained, and "
                 "keyword-rich so that it retrieves the most relevant documents. "
+                "Do NOT add new domain concepts, examples, or assumptions that "
+                "are not explicitly present in the user question. "
+                "Keep terminology as close as possible to the original wording, "
+                "except for clarifying references from chat history. "
                 "Preserve the original intent and language. "
                 "Output ONLY the rewritten query, nothing else."
             ),
